@@ -142,7 +142,9 @@ the zero-dependency default for everything else.
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
   `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `install_tools.sh`
   (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer).
-- **Live state.** `hunt` runs two background loops: `rc2_flag_watcher` (auto-submits flags) and
+- **Live state.** `hunt` runs two background loops: `rc2_flag_watcher` (auto-submits user/root flags
+  via the HTB API through two channels — `flags.txt` and an enforced scan of logged `user.txt`/
+  `root.txt` reads — with persistent dedup in `logs/.submitted` and retry on an auth-rejected submit) and
   `rc2_status_writer` (rewrites `status.md` every `STATUS_INTERVAL`, default 600s — flags, phase,
   hypothesis counts, journal tail, recent tools, tmux, artifact counts). The HTB spawn/IP wait is
   15 tries × 180s = 45 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`); shorten via env for fast boxes.

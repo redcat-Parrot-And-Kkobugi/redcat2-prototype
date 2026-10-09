@@ -368,7 +368,7 @@ Loaded by `lib/bootstrap.sh`; edit the function, not the launcher.
 | `lib/bootstrap.sh` | library loader; sets `$RC2_ROOT`, sources the rest |
 | `lib/common.sh` | ANSI colors, `rc2_resolve_rundir`, `rc2_to_epoch` |
 | `lib/env.sh` | `.env` loading, SecLists, flag helpers |
-| `lib/htb.sh` | token refresh, machine resolve/spawn, VPN pre-flight, flag watcher |
+| `lib/htb.sh` | token refresh, machine resolve/spawn, VPN pre-flight, and `rc2_flag_watcher` — auto-submits user/root flags via two channels (`flags.txt` + enforced scan of logged `user.txt`/`root.txt` reads), persistent dedup in `logs/.submitted`, retry on auth-rejected submit |
 | `lib/run.sh` | run-dir scaffold (the case-preserving slug), prompt assembly, resilient run loop, status writer, oversee launch |
 | `lib/hook_log.sh` | per-run PreToolUse/PostToolUse hook: force-logs every call to `logs/tools.jsonl` + `logs/raw/`, and blocks (exit 2) identical-command/identical-result repeats (anti-stuck/throttle/DoS) |
 

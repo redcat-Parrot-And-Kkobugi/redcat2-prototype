@@ -178,7 +178,7 @@ Raw evidence and auto files alongside:
 
 ```
 target.env   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/
-flags.txt    user=<hex> / root=<hex>  (auto-submitted)
+flags.txt    user=<hex> / root=<hex>  (auto-submitted; see §11)
 status.md    auto snapshot every ~10 min (read-only to the agent)
 writeup.md   metrics (report.sh, on exit)
 failure_analysis.md/.json   why the run went as it did (analyze_run.sh, on exit)
@@ -283,6 +283,12 @@ drive the real service with the exploit `exploit-dev` builds.
   `logs/conv.jsonl` (rendered live by `watch.sh`) and `logs/session_*.log`, not your terminal.
 - **Supervisor:** `oversee.sh` (auto) writes `supervisor.md` only when it sees drift; the solver
   follows a newer `SUPERVISOR_TICK`. Pass an operator directive: `scripts/oversee.sh <slug> "…"`.
+- **Flag auto-submit:** `rc2_flag_watcher` (auto, every 20s) submits user/root flags to HTB through
+  two channels — the `user=`/`root=` lines the agent writes to `flags.txt`, **and** an enforced scan
+  of logged `user.txt`/`root.txt` reads (from `logs/tools.jsonl` + `logs/raw/`), so a captured flag
+  is submitted even if the agent never updated `flags.txt`. Dedup is persistent (`logs/.submitted`);
+  an auth-rejected submit is left unmarked and retried next tick (e.g. after a token refresh). Every
+  attempt is logged to `logs/flag_submit.log`. IP-only runs (no token/`machine_id`) skip submission.
 - **Status snapshot:** `status.md` refreshed every `STATUS_INTERVAL` — flags, phase, hypothesis
   counts, journal tail, recent tools, tmux sessions, artifact counts.
 - **Retrospective (on exit):** `writeup.md` (metrics) and `failure_analysis.md/.json` (why it
