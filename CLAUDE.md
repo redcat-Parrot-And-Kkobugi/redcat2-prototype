@@ -30,7 +30,7 @@ run dir, whose three living-memory files carry all state. There is no separate r
 the disk *is* the memory.
 
 `./hunt` (see `lib/bootstrap.sh`) loads env, **refreshes the HTB token from the newest HAR
-if it's stale** (`rc2_ensure_htb_token`, reusing redcat1's verified extractor), resolves/
+if it's stale** (`rc2_ensure_htb_token`, via the bundled verified extractor), resolves/
 spawns the box via the HTB API, does a VPN pre-flight, scaffolds `runs/<slug>/`, builds the
 system prompt by concatenating `doctrine/*.md`, then launches `claude -p` with
 `--dangerously-skip-permissions`, `--output-format stream-json`, and the doctrine as
@@ -67,20 +67,23 @@ The system has three layers; read them together:
   This is what lets a hunt outlive a single context window — the core requirement for Insane
   boxes. See `doctrine/40-memory-and-state.md` for the exact formats.
 
-## Reused from redcat1 (`$RC1_DIR`, default `/home/kali/redcat`)
+## Standalone — bundled plumbing
 
-redcat2 owns its brain but borrows redcat1's proven plumbing, resolved at launch by
-`lib/bootstrap.sh`:
-- **`.env`** — `$RC1_DIR/.env` is the base (the HAR automation writes `HTB_TOKEN` there);
-  `redcat2/.env` layers on top to override locally. Keep the HTB token in redcat1's `.env`.
-- **`scripts/lib/htb_api.sh`** — sourced for HTB resolve/spawn/submit (v4 machine/vm, v5 own).
-- **`tools/env-setting/set_token_from_har.sh`** — the HAR → `aud:6` bearer extractor, reused
-  verbatim by `rc2_ensure_htb_token`. Drop HARs in `redcat2/har/` or `redcat1/har/`.
-- **SecLists** (`$SECLISTS`) and other `files_etc` resources.
-- **`scripts/conv_fmt.py`** — used to pretty-render the stream-json log if present.
+redcat2 depends on no sibling project. Everything it needs lives inside this tree (the HTB
+plumbing was originally lifted from redcat1 but is now vendored and self-referential via
+relative paths):
+- **`.env`** — redcat2's own, the only env it reads. Holds `CLAUDE_CODE_OAUTH_TOKEN`,
+  `HTB_TOKEN`, `SECLISTS_DIR`, `SUDO_PASS`, `HTB_OVPN`. The HAR automation writes `HTB_TOKEN`
+  here. Gitignored.
+- **`scripts/lib/htb_api.sh`** — HTB resolve/spawn/submit (v4 machine/vm, v5 own).
+- **`tools/env-setting/set_token_from_har.sh`** + `check_token.sh` — the HAR → `aud:6` bearer
+  extractor + validator, called by `rc2_ensure_htb_token`. Drop HARs in `redcat2/har/`.
+- **`scripts/conv_fmt.py`** — pretty-renders the stream-json log (falls back to raw `cat`).
 
-Set `RC1_DIR` to point elsewhere. If the HTB API/token is absent, `./hunt <ip>` still works
-in IP-only mode (no spawn/submit).
+The only external resource is **SecLists** at `$SECLISTS` (default `~/files_etc/SecLists`), a
+shared wordlist tree that is not part of any project. If the HTB API/token is absent,
+`./hunt <ip>` still works in IP-only mode (no spawn/submit). Deleting `/home/kali/redcat` does
+not affect redcat2.
 
 ## Why tmux, not herdr
 

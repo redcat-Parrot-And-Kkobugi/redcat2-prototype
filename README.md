@@ -26,7 +26,7 @@ cp .env.example .env            # fill CLAUDE_CODE_OAUTH_TOKEN (claude setup-tok
 (Network tab → Save all as HAR) into `har/`. When the labs token is missing or expired,
 `./hunt` finds the newest HAR, extracts and verifies the `aud:6` bearer, and writes it
 back — then resolves the machine (OS/difficulty/IP), spawns it if needed, and auto-submits
-captured flags via the API. This is the same pipeline as redcat1, reused as-is.
+captured flags via the API. The whole HAR → token → spawn → submit pipeline is bundled.
 
 Re-run the same target to **resume** — state lives on disk, not in the transcript.
 
@@ -57,7 +57,7 @@ Full methodology: [`doctrine/`](doctrine/). Start at
 | **Brain** | `doctrine/*.md` | The whole methodology, concatenated into the system prompt. Prose, not code. Edit this to change how the agent thinks. |
 | **Team** | `.claude/agents/*.md` | Multi-model sub-agents: `researcher` (sonnet), `recon-analyst` (haiku), `exploit-dev` (opus), `verifier` (opus). One file each; add a specialist by adding a file. |
 | **Memory** | `runs/<slug>/` | Three living files — `worldmodel.md` (verified facts), `hypotheses.md` (attack board), `journal.md` (decision trail) — plus raw evidence dirs. Survives context resets. |
-| **Plumbing** | `hunt`, `lib/` | Launcher, env/HTB/VPN bootstrap, tool-logging hook, flag auto-submit. Reuses redcat1's HTB API + SecLists. |
+| **Plumbing** | `hunt`, `lib/`, `scripts/`, `tools/` | Launcher, env/HTB/VPN bootstrap, bundled HTB API client, HAR token extractor, tool-logging hook, flag auto-submit. |
 
 ## Design choices
 
@@ -69,8 +69,10 @@ Full methodology: [`doctrine/`](doctrine/). Start at
 - **tmux over herdr.** [herdr.dev](https://herdr.dev/) was evaluated; its agent-coordination
   overlaps Claude Code's native sub-agents, so tmux (proven for holding interactive sessions)
   was kept and herdr left as a future multi-machine option. Rationale in `CLAUDE.md`.
-- **Builds on redcat1, doesn't replace it.** Borrows the HTB API client, tokens, and
-  wordlists from `$RC1_DIR` (default `/home/kali/redcat`); owns its own brain and layout.
+- **Standalone.** No runtime dependency on any sibling project — the HTB API client, HAR
+  token extractor, and log renderer are vendored into this tree, and it reads only its own
+  `.env`. The design lineage is redcat1, but deleting redcat1 does not affect redcat2. The
+  one external resource is the shared SecLists wordlist tree at `$SECLISTS`.
 
 ## Extending
 

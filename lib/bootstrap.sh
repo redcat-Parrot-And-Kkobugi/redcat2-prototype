@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  bootstrap.sh — redcat2 environment, HTB resolution, VPN, and run-dir scaffold.
-#  Sourced by ./hunt. Reuses redcat1's proven plumbing (HTB API client, tokens,
-#  SecLists) while keeping redcat2 self-contained in brain and layout.
+#  Sourced by ./hunt. Fully standalone: the HTB API client (scripts/lib/htb_api.sh),
+#  the HAR token extractor (tools/env-setting/), and the log renderer are bundled.
 # =============================================================================
 RC2_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RC1_DIR="${RC1_DIR:-/home/kali/redcat}"           # borrow tokens/API/wordlists from redcat1
+# redcat2 is fully standalone: all tokens, the HTB API client, the HAR extractor, and the log
+# renderer live inside this tree. $SECLISTS (~/files_etc/SecLists) is a shared external wordlist
+# resource, not part of any sibling project.
 
 rc2_load_env() {
-  # redcat1/.env is the BASE (the HAR token automation writes HTB_TOKEN here);
-  # redcat2/.env layers on top so redcat2 can override anything locally.
-  if [ -f "$RC1_DIR/.env" ]; then set -a; . "$RC1_DIR/.env"; set +a; fi
-  if [ -f "$RC2_ROOT/.env" ]; then set -a; . "$RC2_ROOT/.env"; set +a; fi
-  : "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN (run: claude setup-token) in redcat2/.env or $RC1_DIR/.env}"
+  # redcat2's OWN .env — no sibling project is read.
+  [ -f "$RC2_ROOT/.env" ] || { echo "no $RC2_ROOT/.env — copy .env.example to .env and fill it"; return 1; }
+  set -a; . "$RC2_ROOT/.env"; set +a
+  : "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN (run: claude setup-token) in $RC2_ROOT/.env}"
   # SecLists: honour SECLISTS_DIR from env, else common location.
   export SECLISTS="${SECLISTS:-${SECLISTS_DIR:-$HOME/files_etc/SecLists}}"
   export SECLISTS="${SECLISTS/#\~/$HOME}"
-  # HTB API client (sourceable). Non-fatal if absent — IP-only mode still works.
-  if [ -f "$RC1_DIR/scripts/lib/htb_api.sh" ]; then . "$RC1_DIR/scripts/lib/htb_api.sh"; RC2_HTB=1; else RC2_HTB=0; fi
+  # HTB API client (bundled, sourceable). Non-fatal if absent — IP-only mode still works.
+  if [ -f "$RC2_ROOT/scripts/lib/htb_api.sh" ]; then . "$RC2_ROOT/scripts/lib/htb_api.sh"; RC2_HTB=1; else RC2_HTB=0; fi
   unset ANTHROPIC_API_KEY   # force subscription auth; an API key would override + bill per-token
 }
 
@@ -29,24 +30,24 @@ _rc2_token_live() {
   htb_active 2>/dev/null | jq -e 'has("info")' >/dev/null 2>&1
 }
 
-# HAR-driven token automation (reuses redcat1's verified extractor). Drop a fresh devtools HAR from a
-# logged-in app.hackthebox.com into redcat2/har/ (or redcat1/har/); this finds the newest, extracts the
-# aud:6 labs bearer, verifies it against the live API, and writes it to redcat1/.env. Returns 0 if a live
-# token is in place afterwards. Non-fatal: IP-only targets continue without it; name targets need it.
+# HAR-driven token automation (bundled extractor). Drop a fresh devtools HAR from a logged-in
+# app.hackthebox.com into redcat2/har/; this finds the newest, extracts the aud:6 labs bearer, verifies
+# it against the live API, and writes it to redcat2/.env. Returns 0 if a live token is in place
+# afterwards. Non-fatal: IP-only targets continue without it; name targets need it.
 rc2_ensure_htb_token() {
-  if [ "${RC2_HTB:-0}" != "1" ]; then echo "[token] htb_api.sh not found under $RC1_DIR — IP-only mode"; return 1; fi
+  if [ "${RC2_HTB:-0}" != "1" ]; then echo "[token] scripts/lib/htb_api.sh missing — IP-only mode"; return 1; fi
   if _rc2_token_live; then echo "[token] HTB token OK (live auth)"; return 0; fi
   mkdir -p "$RC2_ROOT/har" 2>/dev/null
-  local har extractor="$RC1_DIR/tools/env-setting/set_token_from_har.sh"
-  har="$(ls -t "$RC2_ROOT"/har/*.har "$RC1_DIR"/har/*.har 2>/dev/null | head -1)"
+  local har extractor="$RC2_ROOT/tools/env-setting/set_token_from_har.sh"
+  har="$(ls -t "$RC2_ROOT"/har/*.har 2>/dev/null | head -1)"
   if [ -n "$har" ] && [ -x "$extractor" ]; then
     echo "[token] token missing/expired — extracting from newest HAR: $(basename "$har")"
     "$extractor" "$har" >/dev/null 2>&1 || true
-    rc2_load_env                      # re-source: the fresh token was written to $RC1_DIR/.env
+    rc2_load_env                      # re-source: the fresh token was written to redcat2/.env
     if _rc2_token_live; then echo "[token] refreshed from HAR ✓"; return 0; fi
     echo "[token] HAR found but token still invalid (stale HAR, or not captured while logged in)"
   else
-    echo "[token] no usable HAR in $RC2_ROOT/har/ or $RC1_DIR/har/ (save one from app.hackthebox.com devtools)"
+    echo "[token] no usable HAR in $RC2_ROOT/har/ (save one from app.hackthebox.com devtools)"
   fi
   return 1
 }
@@ -61,7 +62,7 @@ rc2_resolve_target() {
     return 0
   fi
   [ "${RC2_HTB:-0}" = "1" ] && [ -n "${HTB_TOKEN:-}" ] || {
-    echo "[htb] '$t' is a NAME but no HTB API/token available. Pass an IP, or set HTB_TOKEN (see $RC1_DIR README)."; return 1; }
+    echo "[htb] '$t' is a NAME but no HTB API/token available. Pass an IP, or set HTB_TOKEN in redcat2/.env (or drop a fresh HAR in har/)."; return 1; }
   local prof; prof="$(htb_machine_profile "$t" 2>/dev/null)"
   MACHINE_NAME="$(printf '%s' "$prof" | jq -r '.info.name // empty' 2>/dev/null)"
   MACHINE_ID="$(printf '%s'   "$prof" | jq -r '.info.id // empty'   2>/dev/null)"

@@ -126,8 +126,8 @@ printf '\033[2m  watch:  tmux attach -t %s   |   tail -f %s\n  memory: %s/{world
 
 cd "$RUNDIR"
 
-# optional pretty renderer from redcat1 if present; else raw tee
-PRETTY=(cat); [ -f "$RC1_DIR/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC1_DIR/scripts/conv_fmt.py")
+# bundled pretty renderer if present; else raw tee
+PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
 
 claude -p "$PROMPT" \
   --output-format stream-json \
