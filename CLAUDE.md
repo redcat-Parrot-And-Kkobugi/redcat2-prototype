@@ -40,7 +40,9 @@ system prompt by concatenating `doctrine/*.md`, then launches `claude -p` with
 `--dangerously-skip-permissions`, `--output-format stream-json`, and the doctrine as
 `--append-system-prompt`. A per-run hook force-logs every tool call; a background watcher
 auto-submits captured flags. The whole HAR → token → resolve/spawn → submit pipeline is
-hands-off and model-independent.
+hands-off and model-independent. On exit `hunt` runs `report.sh` (metrics → `writeup.md`) and
+`analyze_run.sh` (failure classification → `failure_analysis.md/.json`). Optionally run
+`scripts/oversee.sh <slug>` in a second terminal for a long-horizon supervisor.
 
 ## Architecture (the big picture)
 
@@ -110,7 +112,13 @@ remains a candidate only if multi-machine/distributed operation is ever wanted.
 - **Secrets.** `.env`, `runs/`, `*.ovpn`, keys, HARs are gitignored. Never put a password on a
   command line (it's hook-logged); root actions use `sudo -A` via the wired askpass.
 - Temp/scratch for development goes in `tmp/`; per-run temp is `runs/<slug>/tmp` (`TMPDIR`).
-- **Helper scripts** (`scripts/`): `watch.sh` (live run viewer), `burp.sh up|status|down`
-  (optional Burp-over-MCP, opt-in before `./hunt`), `conv_fmt.py` (stream-json renderer).
+- **Helper scripts** (`scripts/`): `watch.sh` (live run viewer); `oversee.sh` (supervisor/
+  critic → `supervisor.md`, 2nd terminal); `report.sh` + `analyze_run.sh` (retrospectives, auto-
+  run by `hunt` on exit → `writeup.md`, `failure_analysis.md/.json`); `rag.sh` (cross-run memory
+  over past runs); `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`);
+  `install_tools.sh` (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer).
+- **Oversight.** `oversee.sh` runs an opus reviewer that writes `supervisor.md` only on drift; the
+  solver follows a newer `SUPERVISOR_TICK` (doctrine `10-hunt-loop.md`). Its system prompt is
+  `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt).
 - **Reversing** is export-first (`doctrine/60-reversing.md`): IDA → files under `reversing/`,
   grep locally, query IDA MCP only surgically; gdb runs in a `<tmux_base>_dbg` tmux session.

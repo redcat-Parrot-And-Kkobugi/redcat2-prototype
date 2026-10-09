@@ -96,6 +96,15 @@ built, one proven rung at a time. Re-score the board.
   someone who just arrived look at first?* The answer is often a seam you walked past while
   tunnelling.
 
+**External supervisor (`supervisor.md`):** an operator-level reviewer may run alongside you
+and write `supervisor.md` in the run dir when it sees you drifting. At the start of each pass,
+check its first line `SUPERVISOR_TICK: N`. Act on it **only when N is newer** than the tick you
+last applied (record the applied tick in `journal.md` so you don't re-apply it). When the tick
+is new: stop your current action, do a quick self-review (re-read `worldmodel.md` + recent
+evidence), then follow its STOP / DO NEXT as top priority — its redirects **override** your own
+"dead end" conclusions. You never edit `supervisor.md`; the reviewer owns it. If no such file
+exists, ignore this — you are not being supervised and proceed normally.
+
 ## Phase as a side effect
 
 "Recon", "foothold", "user", "privesc", "pivot", "root" are **labels you apply in

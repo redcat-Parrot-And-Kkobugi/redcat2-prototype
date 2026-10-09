@@ -67,6 +67,9 @@ cleanup() {
   [ -n "${RUN_PID:-}" ] && { pkill -TERM -P "$RUN_PID" 2>/dev/null || true; kill -TERM "$RUN_PID" 2>/dev/null || true; }
   touch "$RUNDIR/logs/.stop" 2>/dev/null || true
   [ -n "$FLAG_WATCH_PID" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
+  # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
+  "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
+  "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
   # Solved only when BOTH flags present → tear down tmux. Otherwise preserve state for resume.
   if rc2_both_flags "$RUNDIR"; then
     tmux ls -F '#{session_name}' 2>/dev/null | grep -E "^${tmux_base}(_|$)" | while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
@@ -103,6 +106,8 @@ a chain. If every live hypothesis is refuted and no new surface remains, write a
 journal.md and stop — do not grind or fabricate progress. $NOTES"
 
 LOG="$RUNDIR/logs/session_$(date +%Y%m%d_%H%M%S).log"
+# run metadata for report.sh / oversee.sh (model + start time)
+printf 'model="%s"\nstart_epoch=%s\n' "$MODEL" "$(date +%s)" > "$RUNDIR/logs/meta.env"
 CONV="$RUNDIR/logs/conv.jsonl"; : > "$CONV"
 printf '%s\n' "$SYSPROMPT" > "$RUNDIR/logs/system_prompt.txt"
 jq -cn --arg sp "$SYSPROMPT" '{type:"input",subtype:"system_prompt",chars:($sp|length)}' >> "$CONV" 2>/dev/null || true

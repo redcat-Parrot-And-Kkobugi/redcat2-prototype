@@ -81,7 +81,7 @@ Full methodology: [`doctrine/`](doctrine/). Start at
 ```
 redcat2/
   hunt                       launcher: ./hunt [--fresh] <name|ip> [model] [notes]
-  CLAUDE.md  README.md  .env.example  .gitignore
+  CLAUDE.md  README.md  OVERSEER.md  .env.example  .gitignore
   doctrine/                  the brain — concatenated (00..60) into the system prompt
     00-prime-directive.md      identity, hard rules, done-condition
     10-hunt-loop.md            ORIENT->RESEARCH->EXPERIMENT->OBSERVE->VERIFY->REFLECT + budgets
@@ -98,7 +98,12 @@ redcat2/
     hook_log.sh              force-log every tool call + result; anti-DoS repeat guard
   scripts/
     watch.sh                 live run viewer (reasoning + every tool call/result)
+    oversee.sh               supervisor/critic loop -> writes supervisor.md (2nd terminal)
+    report.sh                run metrics -> writeup.md         (auto on exit)
+    analyze_run.sh           failure classifier -> failure_analysis.md/.json  (auto on exit)
+    rag.sh                   cross-run memory: grep your own past runs
     burp.sh                  optional Burp-over-MCP (up|status|down|restart)
+    install_tools.sh         one-shot Kali toolset install (core|max|--check)
     conv_fmt.py              stream-json -> readable transcript
     lib/htb_api.sh           HTB API client (resolve/spawn/submit)
   tools/env-setting/
@@ -117,6 +122,8 @@ runs/<slug>/
   hypotheses.md              ranked attack board (per-hypothesis evidence budgets)
   journal.md                 append-only decision trail
   flags.txt                  user=<hex> / root=<hex>  (auto-submitted)
+  writeup.md                 metrics (report.sh)   failure_analysis.md/.json (analyze_run.sh)
+  supervisor.md              reviewer verdicts, if oversee.sh is running (solver follows it)
   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/   raw evidence
   logs/                      conv.jsonl, tools.jsonl, raw/, system_prompt.txt, flag_submit.log
   .claude/                   settings.json (logging hook) + agents -> ../../.claude/agents
@@ -154,9 +161,27 @@ sub-agent owns this and returns just the primitives that matter. Dynamic analysi
 (with its plugins) driven inside a dedicated `<tmux_base>_dbg` tmux session. IDA and its MCP
 are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the install.
 
+## Oversight & memory
+
+- **Supervisor/critic** (`scripts/oversee.sh <slug> ["directive"]`, 2nd terminal) — an opus
+  reviewer reads the hunt's logs and living files each tick and, **only when it sees drift**,
+  writes `supervisor.md` with a STATUS / STOP / DO-NEXT verdict. The solver reads that file and
+  course-corrects (doctrine `10-hunt-loop.md`). It's the long-horizon complement to the in-loop
+  `verifier`, catching rabbit holes the solver can't see from inside. It never touches the target.
+- **Retrospectives** (auto on exit, or standalone) — `report.sh` writes metrics into `writeup.md`
+  (wall time, tool/Task counts, per-phase timing); `analyze_run.sh` classifies *why* a run went
+  as it did (tool-execution / state-mgmt / planning / hypothesis / idle-wait) into
+  `failure_analysis.md`+`.json`. These are what make a run judgeable.
+- **Cross-run memory** (`scripts/rag.sh <query>`) — greps the agent's own past runs
+  (journals, world models, hypotheses, writeups, failure analyses) so a service, version, error,
+  or technique it met before has a recalled answer. Doctrine `20` tells the agent to check it
+  before researching live. `-p` also searches the shared PayloadsAllTheThings / GTFOBins refs.
+
 ## Status
 
-Scaffold complete and syntax-checked, including the restart loop, live viewer (`scripts/watch.sh`),
-optional Burp (`scripts/burp.sh`), and the reversing doctrine + `reverser` agent. Not yet run
-end to end against a live box — the first real hunt is the acceptance test. Expect to tune
-doctrine wording and sub-agent model assignments after watching one run.
+Scaffold complete and syntax-checked: the hunt loop + doctrine, multi-model sub-agents, HAR token
+automation, restart loop, live viewer (`watch.sh`), optional Burp (`burp.sh`), reversing doctrine
++ `reverser`, the supervisor (`oversee.sh`), retrospectives (`report.sh`/`analyze_run.sh`), and
+cross-run memory (`rag.sh`). All helper scripts functionally tested on seeded runs. Not yet run
+end to end against a live box — the first real hunt is the acceptance test. Expect to tune doctrine
+wording and sub-agent model assignments after watching one run.
