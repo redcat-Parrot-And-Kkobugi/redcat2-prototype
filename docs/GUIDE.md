@@ -163,7 +163,11 @@ Add a specialist = add one `.claude/agents/<name>.md` (frontmatter: name, descri
 
 ## 6. The run directory & living memory
 
-`runs/<slug>/` is the agent's cwd and memory. The **three living files** are rewritten every loop:
+`runs/<slug>/` is the agent's cwd and memory. The **slug is the real machine name with its case
+preserved** (e.g. `runs/Management`); spaces become `_` and other unsafe characters are dropped. An
+IP target uses the IP as the slug. `tmux_base` is `rc2_<slug>`.
+
+The **three living files** are rewritten every loop:
 
 - `worldmodel.md` — only VERIFIED facts (access, creds, services, topology), each with provenance.
 - `hypotheses.md` — the ranked attack board; one block per hypothesis with preconditions,
@@ -203,6 +207,7 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `scripts/machine.sh` | `scripts/machine.sh <cmd> <name|id> [flag]` | HTB API util: `info` / `ip` / `spawn` / `active` / `stop` / `reset` / `submit`. Names resolve to ids |
 | `scripts/burp.sh` | `scripts/burp.sh up|status|down|restart` | optional Burp headless over MCP; registers `mcp__burp__*`. Needs `BURP_MCP_TOKEN` |
 | `scripts/install_tools.sh` | `scripts/install_tools.sh [core|max|--check]` | install the Kali toolset |
+| `scripts/auto_pr.sh` | (Stop hook) | on a file-changing turn: branch → commit → push → PR → merge to `main` via `gh`. No-op on a clean tree. `AUTO_PR_DISABLE=1`, `AUTO_PR_MERGE`, `AUTO_PR_MODEL`. Dev-workflow only — nothing to do with a hunt. See [TOOLS.md](TOOLS.md) |
 | `scripts/conv_fmt.py` | (internal) | renders `claude -p` stream-json into a readable transcript |
 | `scripts/lib/htb_api.sh` | `scripts/lib/htb_api.sh {profile|active|spawn|terminate|reset|own}` | raw HTB API client (sourceable or CLI) |
 | `tools/env-setting/set_token_from_har.sh` | `… <file.har>` | extract + verify the labs token from a HAR → `.env` |
@@ -212,6 +217,9 @@ Library (sourced, not run directly): `lib/bootstrap.sh` (loader), `lib/common.sh
 run-dir resolve, time), `lib/env.sh` (.env, flags), `lib/htb.sh` (token/resolve/spawn/VPN/
 watcher), `lib/run.sh` (scaffold, prompts, run loop, status writer, oversee launch),
 `lib/hook_log.sh` (per-tool-call logging hook + anti-DoS repeat guard).
+
+**Full per-tool usage** — every flag, env knob, and example for the above — is in
+[`docs/TOOLS.md`](TOOLS.md). This table is the index; that file is the reference.
 
 ---
 
@@ -322,6 +330,10 @@ drive the real service with the exploit `exploit-dev` builds.
 - **Add plumbing** → a function in the right `lib/*.sh`, wired in `hunt`; a standalone helper in
   `scripts/`. Nothing assumes HTB beyond `lib/htb.sh` + `scripts/lib/htb_api.sh`.
 - **Workflow:** changes land via a feature branch → PR → squash-merge (commits are unsigned).
+  Optionally automated: `scripts/auto_pr.sh` wired as a Claude Code **Stop hook** (in a personal,
+  gitignored `.claude/settings.local.json`) does the branch → PR → merge for every file-changing
+  turn. It only activates after a session reload (`/hooks` or restart), since the settings watcher
+  wasn't watching `.claude/` at startup. See [`docs/TOOLS.md`](TOOLS.md).
 
 ---
 
@@ -330,11 +342,13 @@ drive the real service with the exploit `exploit-dev` builds.
 ```
 redcat2/
   hunt                      launcher
-  CLAUDE.md README.md OVERSEER.md docs/GUIDE.md .env.example .gitignore
+  CLAUDE.md README.md OVERSEER.md .env.example .gitignore
+  docs/GUIDE.md docs/TOOLS.md   this guide + the full per-tool reference
   doctrine/00..60           the brain (system prompt)
   .claude/agents/           researcher recon-analyst exploit-dev verifier reverser
+  .claude/settings.local.json   personal auto-PR Stop hook       (gitignored)
   lib/                      bootstrap common env htb run hook_log
-  scripts/                  watch oversee report analyze_run rag machine burp install_tools conv_fmt
+  scripts/                  watch oversee report analyze_run rag machine burp install_tools conv_fmt auto_pr
   scripts/lib/htb_api.sh    HTB API client
   tools/env-setting/        set_token_from_har check_token
   har/                      drop HARs here            (gitignored)
