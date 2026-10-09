@@ -115,10 +115,16 @@ remains a candidate only if multi-machine/distributed operation is ever wanted.
   command line (it's hook-logged); root actions use `sudo -A` via the wired askpass.
 - Temp/scratch for development goes in `tmp/`; per-run temp is `runs/<slug>/tmp` (`TMPDIR`).
 - **Helper scripts** (`scripts/`): `watch.sh` (live run viewer); `oversee.sh` (supervisor/
-  critic → `supervisor.md`, 2nd terminal); `report.sh` + `analyze_run.sh` (retrospectives, auto-
-  run by `hunt` on exit → `writeup.md`, `failure_analysis.md/.json`); `rag.sh` (cross-run memory
-  over past runs); `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`);
-  `install_tools.sh` (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer).
+  critic → `supervisor.md`, auto-started by `hunt` in a `<tmux_base>_oversee` tmux session);
+  `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
+  `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
+  API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×12s spawn wait);
+  `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `install_tools.sh`
+  (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer).
+- **Live state.** `hunt` runs two background loops: `rc2_flag_watcher` (auto-submits flags) and
+  `rc2_status_writer` (rewrites `status.md` every `STATUS_INTERVAL`, default 600s — flags, phase,
+  hypothesis counts, journal tail, recent tools, tmux, artifact counts). The HTB spawn/IP wait is
+  15 tries × 12s = 3 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`), matching redcat1.
 - **Oversight.** `oversee.sh` runs an opus reviewer that writes `supervisor.md` only on drift; the
   solver follows a newer `SUPERVISOR_TICK` (doctrine `10-hunt-loop.md`). Its system prompt is
   `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt).

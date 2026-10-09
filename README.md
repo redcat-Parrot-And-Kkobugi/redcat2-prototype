@@ -112,6 +112,7 @@ redcat2/
     report.sh                run metrics -> writeup.md         (auto on exit)
     analyze_run.sh           failure classifier -> failure_analysis.md/.json  (auto on exit)
     rag.sh                   cross-run memory: grep your own past runs
+    machine.sh               HTB API util: info|ip|spawn|active|stop|reset|submit <name>
     burp.sh                  optional Burp-over-MCP (up|status|down|restart)
     install_tools.sh         one-shot Kali toolset install (core|max|--check)
     conv_fmt.py              stream-json -> readable transcript
@@ -134,6 +135,7 @@ runs/<slug>/
   flags.txt                  user=<hex> / root=<hex>  (auto-submitted)
   writeup.md                 metrics (report.sh)   failure_analysis.md/.json (analyze_run.sh)
   supervisor.md              reviewer verdicts, if oversee.sh is running (solver follows it)
+  status.md                  auto snapshot of the current situation, refreshed every ~10 min
   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/   raw evidence
   logs/                      conv.jsonl, tools.jsonl, raw/, system_prompt.txt, flag_submit.log
   .claude/                   settings.json (logging hook) + agents -> ../../.claude/agents
@@ -186,6 +188,13 @@ are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the
   (journals, world models, hypotheses, writeups, failure analyses) so a service, version, error,
   or technique it met before has a recalled answer. Doctrine `20` tells the agent to check it
   before researching live. `-p` also searches the shared PayloadsAllTheThings / GTFOBins refs.
+- **Periodic status** — a background snapshotter rewrites `status.md` every ~10 min
+  (`STATUS_INTERVAL`) with the current flags, phase, hypothesis counts, recent journal lines,
+  recent tool calls, tmux sessions, and artifact counts. Operator view + resume aid; the agent's
+  own record stays in `journal.md`.
+- **HTB API util** (`scripts/machine.sh`) — once a token exists (from the HAR pipeline), do
+  machine ops by name without a full hunt: `info`, `ip`, `spawn` (waits 15×12s = 3 min for the
+  IP, like redcat1), `active`, `stop`, `reset`, `submit <flag>`. Names resolve to ids automatically.
 
 ## Status
 
