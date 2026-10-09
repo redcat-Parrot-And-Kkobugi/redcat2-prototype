@@ -5,24 +5,68 @@
 #  the htb_api client sourced by rc2_load_env. Sourced via bootstrap.sh.
 # =============================================================================
 
-# Blocking watcher loop: submit each new hex flag in <rundir>/flags.txt via the HTB API, once.
+# _rc2_record_flag <rundir> <kind> <val> — idempotently write kind=flag into flags.txt
+# (fill an empty "kind=" placeholder, else append). kind is user|root.
+_rc2_record_flag() {
+  local rundir="$1" kind="$2" val="$3" ft="$1/flags.txt"
+  grep -qiE "^${kind}=${val}$" "$ft" 2>/dev/null && return 0
+  if grep -qiE "^${kind}=" "$ft" 2>/dev/null; then sed -i "s/^${kind}=.*/${kind}=${val}/I" "$ft"
+  else echo "${kind}=${val}" >> "$ft"; fi
+}
+
+# _rc2_submit_flag <rundir> <kind> <val> — submit once via the HTB API. Persistent dedup in
+# logs/.submitted (survives watcher/hunt restarts); on an auth/invalid/expired response the kind
+# is left UNMARKED so the next tick retries (e.g. after hunt refreshes the token). Needs machine_id.
+_rc2_submit_flag() {
+  local rundir="$1" kind="$2" val="$3" sub="$1/logs/.submitted" log="$1/logs/flag_submit.log"
+  grep -qiE "^${kind}$" "$sub" 2>/dev/null && return 0
+  local stamp resp msg; stamp="$(date -u +%FT%TZ)"
+  resp="$(htb_submit_flag "$machine_id" "$val" 2>/dev/null)"
+  msg="$(printf '%s' "$resp" | jq -r '.message // .status // .' 2>/dev/null | head -1)"
+  printf '%s SUBMIT %s=%s id=%s -> %s\n' "$stamp" "$kind" "$val" "$machine_id" "${msg:-$resp}" >> "$log"
+  case "$msg" in
+    *nvalid*|*xpired*|*wrong*|*ncorrect*|*nauthenticated*|"") : ;;  # leave unmarked -> retry next tick
+    *) echo "$kind" >> "$sub" ;;                                    # owned / already owned / accepted
+  esac
+}
+
+# Blocking watcher loop: auto-submit user/root flags via the HTB API, through TWO channels —
+#   1) manual:   user=/root= lines the agent writes to <rundir>/flags.txt
+#   2) enforced: a logged command that read user.txt/root.txt (scanned from logs/tools.jsonl +
+#                logs/raw/), so a flag is submitted even if the agent never updated flags.txt.
+# Dedup is persistent (logs/.submitted), and a failed/auth-rejected submit retries next tick.
 # Needs machine_id + HTB_TOKEN + the sourced htb_api; returns immediately in IP-only mode.
 # Stops when <rundir>/logs/.stop appears. Call it backgrounded from hunt:  rc2_flag_watcher "$R" &
 rc2_flag_watcher() {
-  local rundir="$1" seen="" line f resp
+  local rundir="$1" logs="$1/logs" hex='[0-9a-fA-F]{32}'
   [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ] || return 0
+  mkdir -p "$logs"; touch "$logs/.submitted"
   while :; do
+    # 1) manual channel — flags.txt (user=/root=)
     if [ -f "$rundir/flags.txt" ]; then
-      while IFS= read -r line; do
-        f="$(printf '%s' "$line" | grep -oiE "$RC2_FLAG_RE" | head -1)"; [ -n "$f" ] || continue
-        case " $seen " in *" $f "*) continue;; esac
-        seen="$seen $f"
-        resp="$(htb_submit_flag "$machine_id" "$f" 2>/dev/null)"
-        printf '%s submit %s -> %s\n' "$(date -u +%FT%TZ)" "$f" \
-          "$(printf '%s' "$resp" | jq -rc '.message // .status // .' 2>/dev/null)" >> "$rundir/logs/flag_submit.log"
-      done < "$rundir/flags.txt"
+      local u r
+      u="$(grep -ioE "^user=$hex" "$rundir/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
+      r="$(grep -ioE "^root=$hex" "$rundir/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
+      [ -n "$u" ] && _rc2_submit_flag "$rundir" user "$u"
+      [ -n "$r" ] && _rc2_submit_flag "$rundir" root "$r"
     fi
-    [ -f "$rundir/logs/.stop" ] && break
+    # 2) enforced channel — a logged command that read user.txt/root.txt
+    if [ -f "$logs/tools.jsonl" ]; then
+      local line cmd of val
+      while IFS= read -r line; do
+        cmd="$(printf '%s' "$line" | jq -r 'select(.event=="post") | .command // empty' 2>/dev/null)"
+        [ -n "$cmd" ] || continue
+        case "$cmd" in
+          *root.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
+                      val="$(grep -ioE "$hex" "$logs/$of" 2>/dev/null | head -1)"
+                      [ -n "$val" ] && { _rc2_record_flag "$rundir" root "$val"; _rc2_submit_flag "$rundir" root "$val"; } ;;
+          *user.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
+                      val="$(grep -ioE "$hex" "$logs/$of" 2>/dev/null | head -1)"
+                      [ -n "$val" ] && { _rc2_record_flag "$rundir" user "$val"; _rc2_submit_flag "$rundir" user "$val"; } ;;
+        esac
+      done < "$logs/tools.jsonl"
+    fi
+    [ -f "$logs/.stop" ] && break
     sleep 20
   done
 }
