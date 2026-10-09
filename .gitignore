@@ -14,3 +14,5 @@ __pycache__/
 *.pyc
 burp_proj/
 reversing/
+# personal workspace config (auto-PR hook etc.) — not forced on collaborators
+.claude/settings.local.json
