@@ -18,6 +18,7 @@ the shape of answer you want back. They do not share your memory — give them w
 | `recon-analyst` | haiku | Distilling large/raw output (nmap, dirb, source dumps, configs) into facts | A path or pasted blob + what you're looking for | A compact fact list + anything anomalous worth a hypothesis |
 | `exploit-dev` | opus | Writing/adapting exploit code, payloads, chains; debugging why one failed | The bug, the target specifics, any PoC you found | Working, commented code in `exploit/` or `tools/` + how to run it |
 | `verifier` | opus | Adversarial review: red-team a claimed success or a risky/destructive plan before you commit | Your claim/plan + the evidence | CONFIRM / REJECT with the specific hole, or the safer alternative |
+| `reverser` | opus | Static binary analysis via IDA (export-first): bulk-decompile to files, grep locally, query IDA surgically | A binary + what you're after | The few functions/primitives that matter + next step, raw decompilation kept on disk |
 
 (Models are the default split — cheap bulk on haiku, research on sonnet, hard reasoning on
 opus. Adjust per box if a run needs it.)
@@ -30,6 +31,8 @@ opus. Adjust per box if a run needs it.)
   → `recon-analyst` to turn it into facts; keep the raw on disk.
 - Need **exploit code** written or adapted, or a payload isn't working and you don't see why
   → `exploit-dev`.
+- Facing a **binary to reverse** → `reverser` (export-first; keeps raw decompilation off your
+  context). Then hand the primitive it finds to `exploit-dev`.
 - About to **declare a win** that reshapes your plan, or about to run something **expensive,
   noisy, or irreversible** → `verifier` first. This is your main guard against fooling
   yourself and against breaking the box.

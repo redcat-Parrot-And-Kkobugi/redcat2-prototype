@@ -56,6 +56,7 @@ recon/              network + surface scans (full nmap, etc.)
 enum/<service>/      per-service deep enumeration (enum/web/, enum/smb/, ...)
 loot/                credentials_found.txt + hashes/ keys/ tickets/ files/
 exploit/             PoCs, payloads, adapted exploit code
+reversing/<binary>/  IDA exports (pseudo.c, strings.txt, imports) + FINDINGS.md (from reverser)
 tools/               scripts YOU wrote (one-line purpose comment on top)
 bin/                 downloaded third-party binaries (untrusted; read before run)
 research/            vetted briefs from the researcher sub-agent, with source URLs

@@ -15,6 +15,8 @@ everything that doesn't:
   `evil-winrm`, interactive exploit handlers.
 - Long or progress-bar jobs you want to watch live and not block on: big `nmap`,
   `ffuf`/`feroxbuster`, `hashcat`/`john`, slow brute forcing.
+- Interactive debugging with gdb — see `doctrine/60-reversing.md` for the debug-session
+  convention (keep the debuggee alive in a dedicated `<tmux_base>_dbg` session).
 
 Doctrine:
 - A shared session named in `target.env` (`tmux_base`) is created for you at launch. Send

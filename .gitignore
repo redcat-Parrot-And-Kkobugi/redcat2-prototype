@@ -12,3 +12,5 @@ id_rsa*
 loot/
 __pycache__/
 *.pyc
+burp_proj/
+reversing/

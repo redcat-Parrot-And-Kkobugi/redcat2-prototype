@@ -28,7 +28,22 @@ cp .env.example .env            # fill CLAUDE_CODE_OAUTH_TOKEN (claude setup-tok
 back — then resolves the machine (OS/difficulty/IP), spawns it if needed, and auto-submits
 captured flags via the API. The whole HAR → token → spawn → submit pipeline is bundled.
 
-Re-run the same target to **resume** — state lives on disk, not in the transcript.
+Re-run the same target to **resume** — state lives on disk, not in the transcript. Add
+`--fresh` to archive the old run and start clean. A crash or context overflow mid-hunt
+**auto-relaunches** and resumes from disk (budget `MAX_RESTARTS`, default 20; `NO_RESTART=1`
+to run once).
+
+**Watch it live** (second terminal) — the agent's reasoning plus every command and result:
+
+```bash
+scripts/watch.sh                 # newest run   (FULL=1 for whole outputs, NOCONV=1 tool-feed only)
+```
+
+**Optional Burp** for web-heavy boxes — bring it up first and `./hunt` inherits `mcp__burp__*`:
+
+```bash
+scripts/burp.sh up               # launch Burp headless + register its MCP (needs BURP_MCP_TOKEN)
+```
 
 ## How it thinks — the Hunt Loop
 
@@ -57,7 +72,7 @@ Full methodology: [`doctrine/`](doctrine/). Start at
 | Layer | Where | Role |
 |---|---|---|
 | **Brain** | `doctrine/*.md` | The whole methodology, concatenated into the system prompt. Prose, not code. Edit this to change how the agent thinks. |
-| **Team** | `.claude/agents/*.md` | Multi-model sub-agents: `researcher` (sonnet), `recon-analyst` (haiku), `exploit-dev` (opus), `verifier` (opus). One file each; add a specialist by adding a file. |
+| **Team** | `.claude/agents/*.md` | Multi-model sub-agents: `researcher` (sonnet), `recon-analyst` (haiku), `exploit-dev` (opus), `verifier` (opus), `reverser` (opus). One file each; add a specialist by adding a file. |
 | **Memory** | `runs/<slug>/` | Three living files — `worldmodel.md` (verified facts), `hypotheses.md` (attack board), `journal.md` (decision trail) — plus raw evidence dirs. Survives context resets. |
 | **Plumbing** | `hunt`, `lib/`, `scripts/`, `tools/` | Launcher, env/HTB/VPN bootstrap, bundled HTB API client, HAR token extractor, tool-logging hook, flag auto-submit. |
 
@@ -83,8 +98,19 @@ Full methodology: [`doctrine/`](doctrine/). Start at
 - **Add plumbing** (reporting, a supervisor, a different lab API) → add to `lib/` and wire in
   `hunt`. Nothing about the loop assumes HTB specifically beyond `lib/bootstrap.sh`.
 
+## Reversing (IDA + gdb)
+
+For boxes with a binary, `doctrine/60-reversing.md` enforces an **export-first** workflow:
+bulk-decompile with IDA Pro 9.3 (via the ida-pro-mcp server) to files under `reversing/`,
+`grep` those locally for logic and strings, and query IDA over MCP only for targeted
+follow-ups — far cheaper in tokens than round-tripping every function. The `reverser`
+sub-agent owns this and returns just the primitives that matter. Dynamic analysis uses gdb
+(with its plugins) driven inside a dedicated `<tmux_base>_dbg` tmux session. IDA and its MCP
+are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the install.
+
 ## Status
 
-Scaffold complete and syntax-checked. Not yet run end to end against a live box — the first
-real hunt is the acceptance test. Expect to tune doctrine wording and sub-agent model
-assignments after watching one run.
+Scaffold complete and syntax-checked, including the restart loop, live viewer (`scripts/watch.sh`),
+optional Burp (`scripts/burp.sh`), and the reversing doctrine + `reverser` agent. Not yet run
+end to end against a live box — the first real hunt is the acceptance test. Expect to tune
+doctrine wording and sub-agent model assignments after watching one run.

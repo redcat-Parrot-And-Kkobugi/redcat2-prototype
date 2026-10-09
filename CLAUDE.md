@@ -26,8 +26,12 @@ looping until the flags fall. The agent reasons from evidence and live research,
 ```
 
 Resume is **automatic and implicit**: re-launching the same target re-enters the existing
-run dir, whose three living-memory files carry all state. There is no separate resume flag —
-the disk *is* the memory.
+run dir, whose three living-memory files carry all state. The disk *is* the memory.
+`--fresh` archives the old run and starts clean. Within a run, a crash or context overflow
+(non-zero exit) **auto-relaunches** a fresh headless agent that resumes from the three files
+(`MAX_RESTARTS`, default 20); a clean exit (flags or a written blocker) is respected and not
+relaunched. `NO_RESTART=1` runs exactly once. Watch any run live with `scripts/watch.sh`
+(reasoning from `conv.jsonl` + every tool call/result from `tools.jsonl`).
 
 `./hunt` (see `lib/bootstrap.sh`) loads env, **refreshes the HTB token from the newest HAR
 if it's stale** (`rc2_ensure_htb_token`, via the bundled verified extractor), resolves/
@@ -55,7 +59,8 @@ The system has three layers; read them together:
 - **The team is `.claude/agents/*.md` (multi-model sub-agents).** The orchestrator (opus by
   default) delegates via the Task tool. `researcher` (sonnet) does web research + dorking;
   `recon-analyst` (haiku) distills walls of output into facts; `exploit-dev` (opus) writes/
-  adapts exploit code; `verifier` (opus) adversarially checks wins and risky actions. Each is
+  adapts exploit code; `verifier` (opus) adversarially checks wins and risky actions;
+  `reverser` (opus) does export-first IDA binary analysis. Each is
   one file with frontmatter (`name`, `description`, `tools`, `model`) + a focused prompt.
   **Adding a specialist = adding one file.** The run dir symlinks this directory in so
   `claude -p` (cwd = run dir) sees the team.
@@ -104,3 +109,7 @@ remains a candidate only if multi-machine/distributed operation is ever wanted.
 - **Secrets.** `.env`, `runs/`, `*.ovpn`, keys, HARs are gitignored. Never put a password on a
   command line (it's hook-logged); root actions use `sudo -A` via the wired askpass.
 - Temp/scratch for development goes in `tmp/`; per-run temp is `runs/<slug>/tmp` (`TMPDIR`).
+- **Helper scripts** (`scripts/`): `watch.sh` (live run viewer), `burp.sh up|status|down`
+  (optional Burp-over-MCP, opt-in before `./hunt`), `conv_fmt.py` (stream-json renderer).
+- **Reversing** is export-first (`doctrine/60-reversing.md`): IDA → files under `reversing/`,
+  grep locally, query IDA MCP only surgically; gdb runs in a `<tmux_base>_dbg` tmux session.
