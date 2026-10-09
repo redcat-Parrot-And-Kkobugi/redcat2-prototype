@@ -97,6 +97,7 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
+| `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
 | `IP_WAIT_TRIES` | 15 | spawn/IP poll attempts |
 | `IP_WAIT_INTERVAL` | 180 | seconds between IP polls (15×180s = 45 min) |
 | `HAR_SRC` | Windows DevTools folder | where to import the newest HAR from |
@@ -283,7 +284,7 @@ drive the real service with the exploit `exploit-dev` builds.
   `logs/conv.jsonl` (rendered live by `watch.sh`) and `logs/session_*.log`, not your terminal.
 - **Supervisor:** `oversee.sh` (auto) writes `supervisor.md` only when it sees drift; the solver
   follows a newer `SUPERVISOR_TICK`. Pass an operator directive: `scripts/oversee.sh <slug> "…"`.
-- **Flag auto-submit:** `rc2_flag_watcher` (auto, every 20s) submits user/root flags to HTB through
+- **Flag auto-submit:** `rc2_flag_watcher` (auto, every `FLAG_INTERVAL` s — default 300 = 5 min) submits user/root flags to HTB through
   two channels — the `user=`/`root=` lines the agent writes to `flags.txt`, **and** an enforced scan
   of logged `user.txt`/`root.txt` reads (from `logs/tools.jsonl` + `logs/raw/`), so a captured flag
   is submitted even if the agent never updated `flags.txt`. Dedup is persistent (`logs/.submitted`);

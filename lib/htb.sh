@@ -38,7 +38,7 @@ _rc2_submit_flag() {
 # Needs machine_id + HTB_TOKEN + the sourced htb_api; returns immediately in IP-only mode.
 # Stops when <rundir>/logs/.stop appears. Call it backgrounded from hunt:  rc2_flag_watcher "$R" &
 rc2_flag_watcher() {
-  local rundir="$1" logs="$1/logs" hex='[0-9a-fA-F]{32}'
+  local rundir="$1" logs="$1/logs" hex='[0-9a-fA-F]{32}' iv="${FLAG_INTERVAL:-300}"
   [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ] || return 0
   mkdir -p "$logs"; touch "$logs/.submitted"
   while :; do
@@ -67,7 +67,7 @@ rc2_flag_watcher() {
       done < "$logs/tools.jsonl"
     fi
     [ -f "$logs/.stop" ] && break
-    sleep 20
+    sleep "$iv"
   done
 }
 
