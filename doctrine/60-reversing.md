@@ -36,9 +36,16 @@ facts that matter, keeping the raw decompilation out of your context.
 ## Dynamic: gdb in tmux
 
 Debugging is interactive and stateful, so it runs in **tmux**, never as one-shot commands.
-Your gdb has its plugin set (pwndbg/gef-style) auto-loading from `~/.gdbinit`.
 
-- Open a dedicated debug session: `<tmux_base>_dbg` (e.g. `tmux new-session -d -s rc2_<slug>_dbg`).
+**Plugins — pick one per session (none auto-loads).** pwndbg, GEF, and PEDA are all installed
+(via the relative installer); `~/.gdbinit` only defines loaders. Launch gdb with the plugin you
+want using the on-PATH wrappers — **`gdb-pwndbg`** (default for exploitation), **`gdb-gef`**, or
+**`gdb-peda`** (also `gdb-peda-intel` / `gdb-peda-arm`). Each is just `gdb -q -ex init-<plugin>`.
+Inside a plain `gdb` you can instead run `init-pwndbg` / `init-gef` / `init-peda` to load one on
+demand. Don't mix two in one session.
+
+- Open a dedicated debug session: `<tmux_base>_dbg` (e.g. `tmux new-session -d -s rc2_<slug>_dbg`),
+  launching the debugger with a plugin, e.g. `gdb-pwndbg ./bin`.
   Keep it alive across loop iterations — the debuggee, breakpoints, and layout persist there.
 - Drive it with `tmux send-keys -t <sess> '<gdb cmd>' Enter` and read state back with
   `tmux capture-pane -p -t <sess>`. Look at the pane before sending the next command, exactly
