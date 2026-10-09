@@ -19,11 +19,8 @@
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-arg="${1:-}"
-if   [ -n "$arg" ] && [ -d "$arg" ];            then RUNDIR="$arg"
-elif [ -n "$arg" ] && [ -d "$ROOT/runs/$arg" ]; then RUNDIR="$ROOT/runs/$arg"
-else RUNDIR="$(ls -1dt "$ROOT"/runs/*/ 2>/dev/null | head -1)"; RUNDIR="${RUNDIR%/}"; fi
+. "$ROOT/lib/common.sh"
+RUNDIR="$(rc2_resolve_rundir "${1:-}")"
 [ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "analyze_run: no run dir"; exit 0; }
 
 L="$RUNDIR/logs"; J="$L/tools.jsonl"; CONV="$L/conv.jsonl"
@@ -79,11 +76,9 @@ phases=0;    [ -f "$L/phases.log" ] && phases="$(wc -l < "$L/phases.log" 2>/dev/
 last_win="$(grep -vE '^\s*$' "$RUNDIR/journal.md" 2>/dev/null | tail -1 | cut -c1-120)"
 
 # ── duration ─────────────────────────────────────────────────────────────────
-to_epoch(){ local t="${1%%.*}"; local d="${t%T*}" c="${t#*T}"
-  date -d "${d:0:4}-${d:4:2}-${d:6:2} ${c:0:2}:${c:2:2}:${c:4:2}" +%s 2>/dev/null || echo 0; }
 dur_min=0
 if [ -n "$first_ts" ] && [ -n "$last_ts" ]; then
-  s=$(to_epoch "$first_ts"); e=$(to_epoch "$last_ts"); [ "$e" -ge "$s" ] 2>/dev/null && dur_min=$(( (e-s)/60 ))
+  s=$(rc2_to_epoch "$first_ts"); e=$(rc2_to_epoch "$last_ts"); [ "$e" -ge "$s" ] 2>/dev/null && dur_min=$(( (e-s)/60 ))
 fi
 
 # ── scoring → primary category ───────────────────────────────────────────────

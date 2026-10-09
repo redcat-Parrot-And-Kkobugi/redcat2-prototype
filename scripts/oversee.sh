@@ -16,11 +16,10 @@
 #    OVERSEE_MODEL=sonnet scripts/oversee.sh blizzard
 # =============================================================================
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
 [ -f "$ROOT/.env" ] && { set -a; . "$ROOT/.env"; set +a; }
 unset ANTHROPIC_API_KEY
 : "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN in .env}"
-g=$'\033[32m'; r=$'\033[31m'; y=$'\033[33m'; c=$'\033[36m'; d=$'\033[2m'; n=$'\033[0m'
 
 NAME="${1:?usage: oversee.sh <machine-name|run-slug> [\"operator directive\"]}"
 OP_NOTE="${2:-${OP_NOTE:-}}"

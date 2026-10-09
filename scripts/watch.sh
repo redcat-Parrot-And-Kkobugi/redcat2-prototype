@@ -17,18 +17,16 @@
 #      tmux attach -t rc2_<slug>_main
 # =============================================================================
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
 arg="${1:-}"
 MAX="${MAX:-200}"
 
-if   [ -n "$arg" ] && [ -d "$arg" ];            then RUNDIR="$arg"
-elif [ -n "$arg" ] && [ -d "$ROOT/runs/$arg" ]; then RUNDIR="$ROOT/runs/$arg"
-else RUNDIR="$(ls -1dt "$ROOT"/runs/*/ 2>/dev/null | head -1)"; RUNDIR="${RUNDIR%/}"; fi
+RUNDIR="$(rc2_resolve_rundir "$arg")"
 [ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "no run dir (pass a name/ip, or start a hunt first)"; exit 1; }
 
 LOGS="$RUNDIR/logs"; jsonl="$LOGS/tools.jsonl"; conv="$LOGS/conv.jsonl"
 slug="$(basename "$RUNDIR")"
-cyan=$'\033[36m'; green=$'\033[32m'; yellow=$'\033[33m'; dim=$'\033[2m'; red=$'\033[31m'; rst=$'\033[0m'
+cyan=$c green=$g yellow=$y dim=$d red=$r rst=$n   # keep local names, values from common.sh
 
 echo "${dim}── watching $RUNDIR ──${rst}"
 echo "${dim}live progress bars: tmux attach -t rc2_${slug}_main${rst}"
