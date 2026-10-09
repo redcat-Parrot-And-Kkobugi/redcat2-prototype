@@ -94,7 +94,11 @@ redcat2/
     researcher.md (sonnet)  recon-analyst.md (haiku)  exploit-dev.md (opus)
     verifier.md (opus)      reverser.md (opus)
   lib/
-    bootstrap.sh             env, HAR->token, HTB resolve/spawn, VPN, scaffold, flag helpers
+    bootstrap.sh             thin loader: sets RC2_ROOT, sources the libs below
+    common.sh                colors, run-dir resolve, timestamp->epoch
+    env.sh                   .env loading, SecLists, flag helpers
+    htb.sh                   token refresh, machine resolve/spawn, VPN, flag watcher
+    run.sh                   run-dir scaffold, prompt assembly, resilient run loop
     hook_log.sh              force-log every tool call + result; anti-DoS repeat guard
   scripts/
     watch.sh                 live run viewer (reasoning + every tool call/result)

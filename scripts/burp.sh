@@ -18,9 +18,8 @@
 #  The Burp install itself is a shared external resource (files_etc), not part of redcat2.
 # =============================================================================
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
 [ -f "$ROOT/.env" ] && { set -a; . "$ROOT/.env"; set +a; }
-g=$'\033[32m'; r=$'\033[31m'; y=$'\033[33m'; d=$'\033[2m'; n=$'\033[0m'
 
 BURP_DIR_DEFAULT="/home/kali/files_etc/burpsuitepro/Burpsuite-Professional/Burpsuite-Professional"
 BURP_JAR="${BURP_JAR:-$BURP_DIR_DEFAULT/burpsuite_pro_v2026.jar}"

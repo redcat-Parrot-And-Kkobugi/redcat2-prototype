@@ -19,11 +19,8 @@
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-arg="${1:-}"
-if   [ -n "$arg" ] && [ -d "$arg" ];            then RUNDIR="$arg"
-elif [ -n "$arg" ] && [ -d "$ROOT/runs/$arg" ]; then RUNDIR="$ROOT/runs/$arg"
-else RUNDIR="$(ls -1dt "$ROOT"/runs/*/ 2>/dev/null | head -1)"; RUNDIR="${RUNDIR%/}"; fi
+. "$ROOT/lib/common.sh"
+RUNDIR="$(rc2_resolve_rundir "${1:-}")"
 [ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "analyze_run: no run dir"; exit 0; }
 
 L="$RUNDIR/logs"; J="$L/tools.jsonl"; CONV="$L/conv.jsonl"
@@ -35,9 +32,10 @@ diff="unknown"
 [ -n "$diff" ] || diff="unknown"
 
 # ── outcome from flags.txt ───────────────────────────────────────────────────
-u=0 r=0
-[ -f "$RUNDIR/flags.txt" ] && { grep -qiE '^user=[0-9a-f]{32}' "$RUNDIR/flags.txt" && u=1; grep -qiE '^root=[0-9a-f]{32}' "$RUNDIR/flags.txt" && r=1; }
-if [ "$u" = 1 ] && [ "$r" = 1 ]; then outcome="solved"; elif [ "$u" = 1 ] || [ "$r" = 1 ]; then outcome="partial"; else outcome="failed"; fi
+# uf/rf not u/r — common.sh exports single-letter color globals (r=red); don't shadow them
+uf=0 rf=0
+[ -f "$RUNDIR/flags.txt" ] && { grep -qiE '^user=[0-9a-f]{32}' "$RUNDIR/flags.txt" && uf=1; grep -qiE '^root=[0-9a-f]{32}' "$RUNDIR/flags.txt" && rf=1; }
+if [ "$uf" = 1 ] && [ "$rf" = 1 ]; then outcome="solved"; elif [ "$uf" = 1 ] || [ "$rf" = 1 ]; then outcome="partial"; else outcome="failed"; fi
 
 # ── tool-call signals ────────────────────────────────────────────────────────
 steps=0 errors=0 timeouts=0 bigout=0 repeated_actions=0 max_repeat=0 first_ts="" last_ts=""
@@ -79,11 +77,9 @@ phases=0;    [ -f "$L/phases.log" ] && phases="$(wc -l < "$L/phases.log" 2>/dev/
 last_win="$(grep -vE '^\s*$' "$RUNDIR/journal.md" 2>/dev/null | tail -1 | cut -c1-120)"
 
 # ── duration ─────────────────────────────────────────────────────────────────
-to_epoch(){ local t="${1%%.*}"; local d="${t%T*}" c="${t#*T}"
-  date -d "${d:0:4}-${d:4:2}-${d:6:2} ${c:0:2}:${c:2:2}:${c:4:2}" +%s 2>/dev/null || echo 0; }
 dur_min=0
 if [ -n "$first_ts" ] && [ -n "$last_ts" ]; then
-  s=$(to_epoch "$first_ts"); e=$(to_epoch "$last_ts"); [ "$e" -ge "$s" ] 2>/dev/null && dur_min=$(( (e-s)/60 ))
+  s=$(rc2_to_epoch "$first_ts"); e=$(rc2_to_epoch "$last_ts"); [ "$e" -ge "$s" ] 2>/dev/null && dur_min=$(( (e-s)/60 ))
 fi
 
 # ── scoring → primary category ───────────────────────────────────────────────

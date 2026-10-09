@@ -33,7 +33,7 @@ run dir, whose three living-memory files carry all state. The disk *is* the memo
 relaunched. `NO_RESTART=1` runs exactly once. Watch any run live with `scripts/watch.sh`
 (reasoning from `conv.jsonl` + every tool call/result from `tools.jsonl`).
 
-`./hunt` (see `lib/bootstrap.sh`) loads env, **refreshes the HTB token from the newest HAR
+`./hunt` (plumbing in `lib/`, loaded via `lib/bootstrap.sh` → `common/env/htb/run.sh`) loads env, **refreshes the HTB token from the newest HAR
 if it's stale** (`rc2_ensure_htb_token`, via the bundled verified extractor), resolves/
 spawns the box via the HTB API, does a VPN pre-flight, scaffolds `runs/<slug>/`, builds the
 system prompt by concatenating `doctrine/*.md`, then launches `claude -p` with
