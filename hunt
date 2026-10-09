@@ -83,27 +83,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 RUN_PID=""
 
-# ── system prompt = the doctrine (the brain), in order ──
-SYSPROMPT="$(cat "$RC2_ROOT"/doctrine/*.md 2>/dev/null)"   # 00..60, in order; new doctrine files auto-included
-
-PROMPT="You are redcat2, hunting the authorized lab machine ${machine_name:-$target_ip} at \
-target_ip=$target_ip (os=${os_hint:-unknown}, difficulty=${difficulty:-unknown}). Your cwd is this \
-box's run dir; everything is relative to it. Your memory is worldmodel.md, hypotheses.md, journal.md \
-— READ ALL THREE FIRST (they may already hold progress from a prior session; continue, do not restart), \
-then run the Hunt Loop from your system prompt until user.txt AND root.txt are captured and VERIFIED. \
-Keep the three living files current every loop; keep raw output under recon/ enum/ loot/ exploit/ \
-research/. Delegate: web research & dorking -> researcher; walls of output -> recon-analyst; exploit \
-code -> exploit-dev; binaries to reverse -> reverser (export-first); verifying a win or a \
-risky/one-shot action -> verifier (use the Task tool). \
-Research the live internet whenever an action depends on something you don't know cold, and read any \
-exploit before running it. Install or build any tool you need on the fly (sudo -A for root; never put \
-a password in a command). Run long/interactive commands in tmux session '$RC2_TMUX' (extra sessions: \
-${tmux_base}_<slug>). Wordlists at \$SECLISTS=$SECLISTS. The moment you read a real flag, append \
-user=<hex> or root=<hex> to flags.txt AND emit <FLAG><hex></FLAG> — a watcher auto-submits it. Act \
-ONLY against $target_ip. Scale effort to the box: on easy/medium targets the shortest path is usually a \
-single known technique — find it fast and don't over-engineer; on hard/insane expect to research and build \
-a chain. If every live hypothesis is refuted and no new surface remains, write a precise blocker note in \
-journal.md and stop — do not grind or fabricate progress. $NOTES"
+# brain (doctrine) + launch prompt (both assembled in lib/run.sh)
+SYSPROMPT="$(rc2_build_sysprompt)"
+PROMPT="$(rc2_build_prompt)"
 
 LOG="$RUNDIR/logs/session_$(date +%Y%m%d_%H%M%S).log"
 # run metadata for report.sh / oversee.sh (model + start time)
@@ -113,34 +95,8 @@ printf '%s\n' "$SYSPROMPT" > "$RUNDIR/logs/system_prompt.txt"
 jq -cn --arg sp "$SYSPROMPT" '{type:"input",subtype:"system_prompt",chars:($sp|length)}' >> "$CONV" 2>/dev/null || true
 jq -cn --arg p "$PROMPT" --arg m "$MODEL" '{type:"input",subtype:"launch",model:$m,prompt:$p}' >> "$CONV" 2>/dev/null || true
 
-printf '\n\033[36m[redcat2]\033[0m hunting %s (%s) — run dir: %s\n' "${machine_name:-$target_ip}" "$target_ip" "$RUNDIR"
-printf '\033[2m  live feed:  scripts/watch.sh %s   (reasoning + every tool call/result)\n  tmux:       tmux attach -t %s\n  memory:     %s/{worldmodel,hypotheses,journal}.md\033[0m\n\n' "$(basename "$RUNDIR")" "$RC2_TMUX" "$RUNDIR"
+printf '\n%s[redcat2]%s hunting %s (%s) — run dir: %s\n' "$c" "$n" "${machine_name:-$target_ip}" "$target_ip" "$RUNDIR"
+printf '%s  live feed:  scripts/watch.sh %s   (reasoning + every tool call/result)\n  tmux:       tmux attach -t %s\n  memory:     %s/{worldmodel,hypotheses,journal}.md%s\n\n' "$d" "$(basename "$RUNDIR")" "$RC2_TMUX" "$RUNDIR" "$n"
 
 cd "$RUNDIR"
-
-# bundled pretty renderer if present; else raw tee
-PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
-
-# Resilient run loop: a crash or context overflow (non-zero exit) auto-relaunches a FRESH headless
-# agent, which resumes from worldmodel.md/hypotheses.md/journal.md — the disk is the memory, so a new
-# context picks up where the old one died. A CLEAN stop (exit 0) is a real decision (flags, or a written
-# blocker) and is NOT second-guessed. NO_RESTART=1 runs exactly once.
-attempt=0
-while :; do
-  attempt=$((attempt+1))
-  [ "$attempt" -gt 1 ] && printf '\033[33m[hunt] relaunch %d/%d — resuming from disk memory\033[0m\n' "$attempt" "$MAX_RESTARTS" | tee -a "$LOG"
-  claude -p "$PROMPT" \
-    --output-format stream-json \
-    --model "$MODEL" \
-    --append-system-prompt "$SYSPROMPT" \
-    --dangerously-skip-permissions \
-    --verbose \
-    > >(tee -a "$CONV" | "${PRETTY[@]}" | tee -a "$LOG") 2>&1 &
-  RUN_PID=$!
-  wait "$RUN_PID"; rc=$?
-  if rc2_both_flags "$RUNDIR"; then echo "[hunt] both flags captured — done." | tee -a "$LOG"; break; fi
-  if [ "${NO_RESTART:-0}" = "1" ]; then echo "[hunt] NO_RESTART=1 — single run complete (rc=$rc)." | tee -a "$LOG"; break; fi
-  if [ "$rc" -eq 0 ]; then echo "[hunt] agent stopped cleanly without both flags (blocker/stuck). Respecting it — not relaunching. Re-run ./hunt $TARGET to continue." | tee -a "$LOG"; break; fi
-  if [ "$attempt" -ge "$MAX_RESTARTS" ]; then echo "[hunt] hit MAX_RESTARTS=$MAX_RESTARTS (last rc=$rc) — stopping." | tee -a "$LOG"; break; fi
-  printf '\033[31m[hunt] agent exited rc=%s (crash/overflow) — will relaunch\033[0m\n' "$rc" | tee -a "$LOG"; sleep 3
-done
+rc2_run_loop      # resilient headless loop (auto-relaunch on crash/overflow); sets RUN_PID for cleanup

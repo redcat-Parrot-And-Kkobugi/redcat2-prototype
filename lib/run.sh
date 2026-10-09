@@ -73,3 +73,57 @@ MD
   : > "$RUNDIR/flags.txt" 2>/dev/null || true
   echo "$RUNDIR"
 }
+
+# ── prompt assembly ──────────────────────────────────────────────────────────
+# System prompt = the doctrine (brain), concatenated in numeric order (00..60).
+rc2_build_sysprompt() { cat "$RC2_ROOT"/doctrine/*.md 2>/dev/null; }
+
+# Launch prompt. Uses: machine_name target_ip os_hint difficulty RC2_TMUX tmux_base SECLISTS NOTES.
+rc2_build_prompt() {
+  printf '%s' "You are redcat2, hunting the authorized lab machine ${machine_name:-$target_ip} at \
+target_ip=$target_ip (os=${os_hint:-unknown}, difficulty=${difficulty:-unknown}). Your cwd is this \
+box's run dir; everything is relative to it. Your memory is worldmodel.md, hypotheses.md, journal.md \
+— READ ALL THREE FIRST (they may already hold progress from a prior session; continue, do not restart), \
+then run the Hunt Loop from your system prompt until user.txt AND root.txt are captured and VERIFIED. \
+Keep the three living files current every loop; keep raw output under recon/ enum/ loot/ exploit/ \
+research/. Delegate: web research & dorking -> researcher; walls of output -> recon-analyst; exploit \
+code -> exploit-dev; binaries to reverse -> reverser (export-first); verifying a win or a \
+risky/one-shot action -> verifier (use the Task tool). \
+Research the live internet whenever an action depends on something you don't know cold, and read any \
+exploit before running it. Install or build any tool you need on the fly (sudo -A for root; never put \
+a password in a command). Run long/interactive commands in tmux session '$RC2_TMUX' (extra sessions: \
+${tmux_base}_<slug>). Wordlists at \$SECLISTS=$SECLISTS. The moment you read a real flag, append \
+user=<hex> or root=<hex> to flags.txt AND emit <FLAG><hex></FLAG> — a watcher auto-submits it. Act \
+ONLY against $target_ip. Scale effort to the box: on easy/medium targets the shortest path is usually a \
+single known technique — find it fast and don't over-engineer; on hard/insane expect to research and build \
+a chain. If every live hypothesis is refuted and no new surface remains, write a precise blocker note in \
+journal.md and stop — do not grind or fabricate progress. $NOTES"
+}
+
+# ── resilient run loop ───────────────────────────────────────────────────────
+# A crash or context overflow (non-zero exit) auto-relaunches a FRESH headless agent, which resumes
+# from the three living files (disk is the memory). A CLEAN stop (exit 0 = flags or a written blocker)
+# is NOT second-guessed. NO_RESTART=1 runs once. Uses: PROMPT MODEL SYSPROMPT CONV LOG MAX_RESTARTS
+# NO_RESTART RUNDIR TARGET RC2_ROOT. Sets global RUN_PID (so cleanup can kill the agent).
+rc2_run_loop() {
+  local attempt=0 rc
+  local PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
+  while :; do
+    attempt=$((attempt+1))
+    [ "$attempt" -gt 1 ] && printf '\033[33m[hunt] relaunch %d/%d — resuming from disk memory\033[0m\n' "$attempt" "$MAX_RESTARTS" | tee -a "$LOG"
+    claude -p "$PROMPT" \
+      --output-format stream-json \
+      --model "$MODEL" \
+      --append-system-prompt "$SYSPROMPT" \
+      --dangerously-skip-permissions \
+      --verbose \
+      > >(tee -a "$CONV" | "${PRETTY[@]}" | tee -a "$LOG") 2>&1 &
+    RUN_PID=$!          # global on purpose: cleanup() kills it
+    wait "$RUN_PID"; rc=$?
+    if rc2_both_flags "$RUNDIR"; then echo "[hunt] both flags captured — done." | tee -a "$LOG"; break; fi
+    if [ "${NO_RESTART:-0}" = "1" ]; then echo "[hunt] NO_RESTART=1 — single run complete (rc=$rc)." | tee -a "$LOG"; break; fi
+    if [ "$rc" -eq 0 ]; then echo "[hunt] agent stopped cleanly without both flags (blocker/stuck). Respecting it — not relaunching. Re-run ./hunt $TARGET to continue." | tee -a "$LOG"; break; fi
+    if [ "$attempt" -ge "$MAX_RESTARTS" ]; then echo "[hunt] hit MAX_RESTARTS=$MAX_RESTARTS (last rc=$rc) — stopping." | tee -a "$LOG"; break; fi
+    printf '\033[31m[hunt] agent exited rc=%s (crash/overflow) — will relaunch\033[0m\n' "$rc" | tee -a "$LOG"; sleep 3
+  done
+}

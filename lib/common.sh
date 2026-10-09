@@ -2,7 +2,7 @@
 # =============================================================================
 #  common.sh — shared helpers for redcat2 scripts + libs. Idempotent; source it:
 #      ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
-#  Provides: ANSI colors (g r y c d n), rc2_resolve_rundir, rc2_to_epoch, rc2_say.
+#  Provides: ANSI colors (g r y c d n), rc2_resolve_rundir, rc2_to_epoch.
 # =============================================================================
 
 # ANSI colors (plain; harmless when redirected)
@@ -23,6 +23,3 @@ rc2_to_epoch() {
   dd="${t%T*}"; cc="${t#*T}"
   date -d "${dd:0:4}-${dd:4:2}-${dd:6:2} ${cc:0:2}:${cc:2:2}:${cc:4:2}" +%s 2>/dev/null || echo 0
 }
-
-# rc2_say <msg> — uniform log line to stderr
-rc2_say() { printf '%s[redcat2]%s %s\n' "$c" "$n" "$*" >&2; }
