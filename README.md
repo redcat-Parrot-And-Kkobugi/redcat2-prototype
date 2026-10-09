@@ -30,9 +30,10 @@ bearer, writes it to `.env`, then resolves the machine (OS/difficulty/IP), spawn
 needed, and auto-submits captured flags via the API. The whole HAR → token → spawn → submit
 pipeline is bundled and automatic.
 
-**The supervisor runs alongside by default.** `./hunt` starts `oversee.sh` in its own tmux
-session (`<tmux_base>_oversee`), so the critic watches and writes `supervisor.md` without a
-second terminal. `NO_OVERSEE=1 ./hunt …` disables it; `OVERSEE_INTERVAL=300` tunes the cadence.
+**The supervisor runs alongside by default.** `./hunt` starts `oversee.sh` so the critic watches
+and writes `supervisor.md` without a second terminal — in a **herdr sibling pane** when you run
+`./hunt` inside herdr, otherwise a `<tmux_base>_oversee` tmux session. `NO_OVERSEE=1 ./hunt …`
+disables it; `OVERSEE_INTERVAL=300` tunes the cadence.
 
 Re-run the same target to **resume** — state lives on disk, not in the transcript. Add
 `--fresh` to archive the old run and start clean. A crash or context overflow mid-hunt

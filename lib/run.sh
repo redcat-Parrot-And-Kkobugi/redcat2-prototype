@@ -184,3 +184,32 @@ rc2_status_writer() {
     if [ $(( $(date +%s) - last )) -ge "$interval" ]; then rc2_write_status "$rundir"; last=$(date +%s); fi
   done
 }
+
+# ── side process: supervisor (oversee), placed per the runtime ───────────────
+# Inside herdr (HERDR_ENV=1) oversee runs in a sibling pane; otherwise a tmux session (default).
+# NO_OVERSEE=1 skips it. Sets HERDR_OVERSEE_PANE (herdr) so cleanup can close it; else the tmux
+# session is <tmux_base>_oversee. Needs $RC2_ROOT, $tmux_base.
+rc2_launch_oversee() {
+  local rundir="$1" slug; slug="$(basename "$rundir")"
+  HERDR_OVERSEE_PANE=""
+  [ "${NO_OVERSEE:-0}" = "1" ] && { echo "[oversee] disabled (NO_OVERSEE=1)"; return 0; }
+  local ocmd="OVERSEE_INTERVAL='${OVERSEE_INTERVAL:-600}' scripts/oversee.sh '$slug'"
+  if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
+    local p; p="$(herdr pane split --current --direction right --cwd "$RC2_ROOT" --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
+    if [ -n "$p" ]; then
+      herdr pane run "$p" "$ocmd" >/dev/null 2>&1
+      HERDR_OVERSEE_PANE="$p"
+      echo "[oversee] herdr pane $p (right split; herdr pane read $p to view)"
+      return 0
+    fi
+    echo "[oversee] herdr pane split failed — falling back to tmux"
+  fi
+  tmux new-session -d -s "${tmux_base}_oversee" "cd '$RC2_ROOT' && $ocmd" 2>/dev/null \
+    && echo "[oversee] tmux '${tmux_base}_oversee' (attach to watch; NO_OVERSEE=1 to disable)" || true
+}
+
+# Stop whatever rc2_launch_oversee started (herdr pane or tmux session).
+rc2_stop_oversee() {
+  if [ -n "${HERDR_OVERSEE_PANE:-}" ]; then herdr pane close "$HERDR_OVERSEE_PANE" 2>/dev/null || true
+  else tmux kill-session -t "${tmux_base}_oversee" 2>/dev/null || true; fi
+}

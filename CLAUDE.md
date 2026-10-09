@@ -37,8 +37,9 @@ relaunched. `NO_RESTART=1` runs exactly once. Watch any run live with `scripts/w
 env, **refreshes the HTB token when stale** (`rc2_ensure_htb_token`: `rc2_import_har` copies
 the newest `*.har` from `$HAR_SRC` — default the Windows DevTools folder — into `har/`, then
 the bundled extractor writes a verified token to `.env`), resolves/spawns the box via the HTB
-API, does a VPN pre-flight, scaffolds `runs/<slug>/`, starts `oversee.sh` in a
-`<tmux_base>_oversee` tmux session (unless `NO_OVERSEE=1`), builds the system prompt by
+API, does a VPN pre-flight, scaffolds `runs/<slug>/`, starts `oversee.sh` alongside — a herdr
+sibling pane if run inside herdr, else a `<tmux_base>_oversee` tmux session (unless `NO_OVERSEE=1`),
+builds the system prompt by
 concatenating `doctrine/*.md`, then launches `claude -p` with `--dangerously-skip-permissions`,
 `--output-format stream-json`, and the doctrine as `--append-system-prompt`. A per-run hook
 force-logs every tool call; a background watcher auto-submits captured flags. The whole
@@ -101,19 +102,20 @@ not affect redcat2.
 - **`<tmux_base>_main`** — long/progress tools the operator watches live.
 - the agent's own interactive sessions it drives via `send-keys`: reverse shells, `msfconsole`,
   handlers, and the **`<tmux_base>_dbg`** gdb session.
-- **`<tmux_base>_oversee`** — the supervisor loop.
+- **`<tmux_base>_oversee`** — the supervisor loop (only when NOT inside herdr; see below).
 tmux is zero-dependency and lives in the agent's shell env, so everything runs on it by default.
 (The OpenVPN tunnel is a separate system daemon — `openvpn --daemon`, logged to `logs/openvpn.log`
 — not a tmux session; it's shared infra and left up across hunts.)
 
 **herdr** ([herdr.dev](https://herdr.dev) — a runtime for coding agents: persistent, status-aware
-sessions, a socket API to coordinate agents, multi-machine over SSH) is the optional **outer /
-operator** layer: hosting one or more hunts (and their overseers) as disconnect-surviving,
-status-detected sessions, and running hunts across several machines. Its *in-process* agent
-coordination overlaps Claude Code's native sub-agents (which redcat2 uses), so herdr is not used
-for that. It is **not installed or wired here** (pre-1.0; its session CLI can't be exercised in
-this environment) — install with `curl -fsSL https://herdr.dev/install.sh | sh` and run the same
-`./hunt` / `scripts/oversee.sh` commands as managed sessions. tmux stays the zero-dependency default.
+sessions, a socket API to coordinate agents, multi-machine over SSH) is the **outer / operator**
+layer: run `./hunt` inside a herdr pane and it becomes herdr-aware — `rc2_launch_oversee` detects
+`HERDR_ENV=1` and puts oversee in a **sibling pane** (`herdr pane split --current` + `pane run`)
+instead of a tmux session; cleanup closes that pane. Outside herdr, oversee falls back to tmux.
+herdr's *in-process* agent coordination overlaps Claude Code's native sub-agents (which redcat2
+uses), so herdr is not used for that. herdr is installed here; the pane mechanics are verified.
+Start it with `herdr` (TUI) or `herdr server` (headless), then run `./hunt` in a pane. tmux stays
+the zero-dependency default for everything else.
 
 ## Conventions
 
@@ -126,7 +128,8 @@ this environment) — install with `curl -fsSL https://herdr.dev/install.sh | sh
   command line (it's hook-logged); root actions use `sudo -A` via the wired askpass.
 - Temp/scratch for development goes in `tmp/`; per-run temp is `runs/<slug>/tmp` (`TMPDIR`).
 - **Helper scripts** (`scripts/`): `watch.sh` (live run viewer); `oversee.sh` (supervisor/
-  critic → `supervisor.md`, auto-started by `hunt` in a `<tmux_base>_oversee` tmux session);
+  critic → `supervisor.md`, auto-started by `hunt` — a herdr sibling pane inside herdr, else a
+  `<tmux_base>_oversee` tmux session);
   `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
   `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×12s spawn wait);
