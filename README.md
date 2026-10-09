@@ -204,7 +204,7 @@ are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the
   recent tool calls, tmux sessions, and artifact counts. Operator view + resume aid; the agent's
   own record stays in `journal.md`.
 - **HTB API util** (`scripts/machine.sh`) — once a token exists (from the HAR pipeline), do
-  machine ops by name without a full hunt: `info`, `ip`, `spawn` (waits 15×12s = 3 min for the
+  machine ops by name without a full hunt: `info`, `ip`, `spawn` (waits 15×3 min = 45 min for the
   IP, like redcat1), `active`, `stop`, `reset`, `submit <flag>`. Names resolve to ids automatically.
 
 ## Status
