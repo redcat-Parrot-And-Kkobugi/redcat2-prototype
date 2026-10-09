@@ -24,6 +24,35 @@ rc2_load_env() {
 
 _rc2_is_ip() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
 
+# ── flags ────────────────────────────────────────────────────────────────────
+RC2_FLAG_RE='[0-9a-f]{32}'                         # HTB flag = 32-hex
+# both user+root captured in <rundir>/flags.txt ?
+rc2_both_flags() {
+  local f="${1:-.}/flags.txt"
+  [ -f "$f" ] && grep -qiE "^user=$RC2_FLAG_RE" "$f" && grep -qiE "^root=$RC2_FLAG_RE" "$f"
+}
+# Blocking watcher loop: submit each new hex flag in <rundir>/flags.txt via the HTB API, once.
+# Needs machine_id + HTB_TOKEN + the sourced htb_api; returns immediately in IP-only mode.
+# Stops when <rundir>/logs/.stop appears. Call it backgrounded from hunt:  rc2_flag_watcher "$R" &
+rc2_flag_watcher() {
+  local rundir="$1" seen="" line f resp
+  [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ] || return 0
+  while :; do
+    if [ -f "$rundir/flags.txt" ]; then
+      while IFS= read -r line; do
+        f="$(printf '%s' "$line" | grep -oiE "$RC2_FLAG_RE" | head -1)"; [ -n "$f" ] || continue
+        case " $seen " in *" $f "*) continue;; esac
+        seen="$seen $f"
+        resp="$(htb_submit_flag "$machine_id" "$f" 2>/dev/null)"
+        printf '%s submit %s -> %s\n' "$(date -u +%FT%TZ)" "$f" \
+          "$(printf '%s' "$resp" | jq -rc '.message // .status // .' 2>/dev/null)" >> "$rundir/logs/flag_submit.log"
+      done < "$rundir/flags.txt"
+    fi
+    [ -f "$rundir/logs/.stop" ] && break
+    sleep 20
+  done
+}
+
 # Is the current HTB_TOKEN live against the labs API? (auth works -> response has an "info" key)
 _rc2_token_live() {
   [ "${RC2_HTB:-0}" = "1" ] && [ -n "${HTB_TOKEN:-}" ] || return 1

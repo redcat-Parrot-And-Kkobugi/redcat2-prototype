@@ -59,28 +59,8 @@ rc2_ensure_vpn "$target_ip" "$SUDO_A"
 export RC2_TMUX="${tmux_base}_main"
 tmux new-session -d -s "$RC2_TMUX" -x 220 -y 50 2>/dev/null || true
 
-# ── background flag auto-submitter: watch flags.txt, submit new hex flags via the HTB API ──
-FLAG_WATCH_PID=""
-if [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ]; then
-  (
-    seen=""
-    while :; do
-      if [ -f "$RUNDIR/flags.txt" ]; then
-        while IFS= read -r line; do
-          f="$(printf '%s' "$line" | grep -oiE '[0-9a-f]{32}' | head -1)"
-          [ -n "$f" ] || continue
-          case " $seen " in *" $f "*) continue;; esac
-          seen="$seen $f"
-          resp="$(htb_submit_flag "$machine_id" "$f" 2>/dev/null)"
-          printf '%s submit %s -> %s\n' "$(date -u +%FT%TZ)" "$f" "$(printf '%s' "$resp" | jq -rc '.message // .status // .' 2>/dev/null)" >> "$RUNDIR/logs/flag_submit.log"
-        done < "$RUNDIR/flags.txt"
-      fi
-      [ -f "$RUNDIR/logs/.stop" ] && break
-      sleep 20
-    done
-  ) &
-  FLAG_WATCH_PID=$!
-fi
+# background flag auto-submitter (returns immediately in IP-only mode)
+rc2_flag_watcher "$RUNDIR" & FLAG_WATCH_PID=$!
 
 cleanup() {
   [ -n "${_CLEANED:-}" ] && return 0; _CLEANED=1
@@ -88,7 +68,7 @@ cleanup() {
   touch "$RUNDIR/logs/.stop" 2>/dev/null || true
   [ -n "$FLAG_WATCH_PID" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
   # Solved only when BOTH flags present → tear down tmux. Otherwise preserve state for resume.
-  if [ -f "$RUNDIR/flags.txt" ] && grep -qiE '^user=[0-9a-f]{32}' "$RUNDIR/flags.txt" && grep -qiE '^root=[0-9a-f]{32}' "$RUNDIR/flags.txt"; then
+  if rc2_both_flags "$RUNDIR"; then
     tmux ls -F '#{session_name}' 2>/dev/null | grep -E "^${tmux_base}(_|$)" | while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
     echo "[hunt] SOLVED — both flags captured. tmux torn down. Run dir: $RUNDIR"
   else
@@ -136,8 +116,6 @@ cd "$RUNDIR"
 # bundled pretty renderer if present; else raw tee
 PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
 
-both_flags() { [ -f flags.txt ] && grep -qiE '^user=[0-9a-f]{32}' flags.txt && grep -qiE '^root=[0-9a-f]{32}' flags.txt; }
-
 # Resilient run loop: a crash or context overflow (non-zero exit) auto-relaunches a FRESH headless
 # agent, which resumes from worldmodel.md/hypotheses.md/journal.md — the disk is the memory, so a new
 # context picks up where the old one died. A CLEAN stop (exit 0) is a real decision (flags, or a written
@@ -155,7 +133,7 @@ while :; do
     > >(tee -a "$CONV" | "${PRETTY[@]}" | tee -a "$LOG") 2>&1 &
   RUN_PID=$!
   wait "$RUN_PID"; rc=$?
-  if both_flags; then echo "[hunt] both flags captured — done." | tee -a "$LOG"; break; fi
+  if rc2_both_flags "$RUNDIR"; then echo "[hunt] both flags captured — done." | tee -a "$LOG"; break; fi
   if [ "${NO_RESTART:-0}" = "1" ]; then echo "[hunt] NO_RESTART=1 — single run complete (rc=$rc)." | tee -a "$LOG"; break; fi
   if [ "$rc" -eq 0 ]; then echo "[hunt] agent stopped cleanly without both flags (blocker/stuck). Respecting it — not relaunching. Re-run ./hunt $TARGET to continue." | tee -a "$LOG"; break; fi
   if [ "$attempt" -ge "$MAX_RESTARTS" ]; then echo "[hunt] hit MAX_RESTARTS=$MAX_RESTARTS (last rc=$rc) — stopping." | tee -a "$LOG"; break; fi
