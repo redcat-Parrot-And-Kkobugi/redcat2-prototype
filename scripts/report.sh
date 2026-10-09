@@ -96,14 +96,50 @@ ${subs:-  (none)}
 EOF
 )"
 
+# ── narrative writeup (auto from worldmodel.md + journal.md) ─────────────────────
+# Assembled with printf/sed (NOT an unquoted heredoc) so file content is never shell-evaluated.
+# Style: emoji banner by default (WRITEUP_EMOJI=1); set WRITEUP_EMOJI=0 for a plain ASCII fallback.
+WM="$RUNDIR/worldmodel.md"; JO="$RUNDIR/journal.md"
+uf="$(grep -ioE '^user=[0-9a-fA-F]{32}' "$RUNDIR/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
+rf="$(grep -ioE '^root=[0-9a-fA-F]{32}' "$RUNDIR/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
+emoji="${WRITEUP_EMOJI:-1}"
+if [ "$emoji" = "1" ]; then fF='🏴 '; fM='🖥️'; fU='👤'; fR='🔑'; else fF=''; fM='•'; fU='•'; fR='•'; fi
+chain="$(awk -v e="$emoji" '
+  /^[0-9]{4}-/{
+    m="🔹"; if(e!="1")m="-";
+    if(e=="1"){ if($0~/FOOTHOLD/)m="🎯"; else if($0~/USER/)m="👤"; else if($0~/ROOT/)m="🧗"; else if($0~/PIVOT/)m="🔀"; else if($0~/START/)m="🧭"; }
+    print "- " m " " $0;
+  }' "$JO" 2>/dev/null | head -30)"
+tools_written="$(cd "$RUNDIR" 2>/dev/null && find tools exploit -maxdepth 2 -type f 2>/dev/null | sed 's#^#- #' | head -40)"
+
+nf="$(mktemp)"
+{
+  printf '%s\n' "<!-- WRITEUP:START (auto by report.sh from worldmodel.md + journal.md — curated prose ABOVE this block is preserved) -->"
+  printf '# %s%s — %s\n\n' "$fF" "${machine_name:-?}" "${target_ip:-?}"
+  printf -- '- %s %s · difficulty %s\n'       "$fM" "${os_hint:-?}" "${difficulty:-?}"
+  printf -- '- %s user.txt: `%s`\n'           "$fU" "${uf:-<not captured>}"
+  printf -- '- %s root.txt: `%s`\n\n'         "$fR" "${rf:-<not captured>}"
+  printf '## Solve chain\n'
+  if [ -n "$chain" ]; then printf '%s\n' "$chain"; else printf '%s\n' "_(no milestones in journal.md)_"; fi
+  printf '\n## Verified facts (from worldmodel.md)\n'
+  if [ -s "$WM" ]; then sed '1{/^# /d;}' "$WM"; else printf '%s\n' "_(worldmodel.md empty)_"; fi
+  printf '\n## Tools & exploits written\n'
+  if [ -n "$tools_written" ]; then printf '%s\n' "$tools_written"; else printf '%s\n' "_(none)_"; fi
+  printf '%s\n' "<!-- WRITEUP:END -->"
+} > "$nf"
+
 WU="$RUNDIR/writeup.md"; touch "$WU"
+# refresh/insert the narrative block (file-based splice → safe for any content)
+if grep -q 'WRITEUP:START' "$WU" 2>/dev/null; then
+  awk -v f="$nf" '/WRITEUP:START/{while((getline l < f)>0)print l; close(f); skip=1} /WRITEUP:END/{skip=0;next} !skip{print}' "$WU" > "$WU.tmp" && mv "$WU.tmp" "$WU"
+else
+  { cat "$nf"; echo; cat "$WU"; } > "$WU.tmp" && mv "$WU.tmp" "$WU"
+fi
+rm -f "$nf"
+# refresh/insert the metrics block
 if grep -q 'METRICS:START' "$WU" 2>/dev/null; then
-  awk -v blk="$block" '
-    /METRICS:START/{print blk; skip=1}
-    /METRICS:END/{skip=0; next}
-    !skip{print}
-  ' "$WU" > "$WU.tmp" && mv "$WU.tmp" "$WU"
+  awk -v blk="$block" '/METRICS:START/{print blk;skip=1} /METRICS:END/{skip=0;next} !skip{print}' "$WU" > "$WU.tmp" && mv "$WU.tmp" "$WU"
 else
   printf '\n%s\n' "$block" >> "$WU"
 fi
-echo "[report] metrics written to $WU"
+echo "[report] writeup (narrative + metrics) written to $WU"

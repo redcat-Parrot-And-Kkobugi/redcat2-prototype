@@ -72,6 +72,7 @@ cleanup() {
   [ -n "${_CLEANED:-}" ] && return 0; _CLEANED=1
   [ -n "${RUN_PID:-}" ] && { pkill -TERM -P "$RUN_PID" 2>/dev/null || true; kill -TERM "$RUN_PID" 2>/dev/null || true; }
   touch "$RUNDIR/logs/.stop" 2>/dev/null || true
+  rc2_flag_scan_once "$RUNDIR" 2>/dev/null || true                 # final sweep: submit a flag captured since the last poll
   [ -n "${FLAG_WATCH_PID:-}" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
   [ -n "${STATUS_PID:-}" ] && kill "$STATUS_PID" 2>/dev/null || true
   rc2_write_status "$RUNDIR" 2>/dev/null || true                   # final snapshot
