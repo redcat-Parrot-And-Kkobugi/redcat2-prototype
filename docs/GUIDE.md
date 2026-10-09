@@ -98,12 +98,12 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `IP_WAIT_TRIES` | 15 | spawn/IP poll attempts |
-| `IP_WAIT_INTERVAL` | 12 | seconds between IP polls (15×12 = 3 min) |
+| `IP_WAIT_INTERVAL` | 180 | seconds between IP polls (15×180s = 45 min) |
 | `HAR_SRC` | Windows DevTools folder | where to import the newest HAR from |
 | `FRESH` | — | same as `--fresh` |
 
 ### Launch sequence (what `./hunt` does)
-load `.env` → refresh HTB token from newest HAR if stale → resolve/spawn the box (wait 3 min) →
+load `.env` → refresh HTB token from newest HAR if stale → resolve/spawn the box (wait up to 15×3 min) →
 VPN pre-flight (`openvpn --daemon` if `HTB_OVPN` set) → scaffold `runs/<slug>/` → start the flag
 auto-submitter, the `status.md` writer, and the supervisor (herdr pane or tmux) → build the
 system prompt from `doctrine/*.md` → run `claude -p` in the resilient loop → on exit write
@@ -303,7 +303,7 @@ drive the real service with the exploit `exploit-dev` builds.
 |---|---|
 | `set CLAUDE_CODE_OAUTH_TOKEN …` | run `claude setup-token`, put it in `.env` |
 | name target rejected / token dead | drop a fresh HAR in `HAR_SRC`; `./hunt` re-imports, or run `tools/env-setting/check_token.sh` |
-| no IP after spawn | box still booting; it waits 15×12s=3 min, then set `target_ip` in `runs/<slug>/target.env` and re-run |
+| no IP after spawn | box still booting; it waits 15×3 min=45 min, then set `target_ip` in `runs/<slug>/target.env` and re-run |
 | no route to target | set `HTB_OVPN` in `.env`, or `sudo openvpn <file> &` |
 | agent keeps restarting | it's crashing/overflowing; check `logs/session_*.log`; `NO_RESTART=1` to stop the loop |
 | supervisor burning tokens | `NO_OVERSEE=1 ./hunt …` or raise `OVERSEE_INTERVAL` |

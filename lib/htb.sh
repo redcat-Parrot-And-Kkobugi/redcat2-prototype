@@ -101,8 +101,8 @@ rc2_resolve_target() {
   if [ -z "$TARGET_IP" ] || [ "$TARGET_IP" = "null" ]; then
     echo "[htb] spawning $MACHINE_NAME (id $MACHINE_ID) ..."
     htb_spawn "$MACHINE_ID" >/dev/null 2>&1 || true
-    # poll for the IP: 15 tries, 12s apart (= 3 min), like redcat1. Tune via env.
-    local i tries="${IP_WAIT_TRIES:-15}" interval="${IP_WAIT_INTERVAL:-12}"
+    # poll for the IP: 15 tries, 3 min apart (= 45 min total). Tune via env.
+    local i tries="${IP_WAIT_TRIES:-15}" interval="${IP_WAIT_INTERVAL:-180}"
     for i in $(seq 1 "$tries"); do
       local act; act="$(htb_active 2>/dev/null)"
       TARGET_IP="$(printf '%s' "$act" | jq -r '.info.ip // empty' 2>/dev/null)"

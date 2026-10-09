@@ -132,13 +132,13 @@ the zero-dependency default for everything else.
   `<tmux_base>_oversee` tmux session);
   `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
   `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
-  API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×12s spawn wait);
+  API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
   `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `install_tools.sh`
   (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer).
 - **Live state.** `hunt` runs two background loops: `rc2_flag_watcher` (auto-submits flags) and
   `rc2_status_writer` (rewrites `status.md` every `STATUS_INTERVAL`, default 600s — flags, phase,
   hypothesis counts, journal tail, recent tools, tmux, artifact counts). The HTB spawn/IP wait is
-  15 tries × 12s = 3 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`), matching redcat1.
+  15 tries × 180s = 45 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`); shorten via env for fast boxes.
 - **Oversight.** `oversee.sh` runs an opus reviewer that writes `supervisor.md` only on drift; the
   solver follows a newer `SUPERVISOR_TICK` (doctrine `10-hunt-loop.md`). Its system prompt is
   `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt).

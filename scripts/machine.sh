@@ -4,13 +4,13 @@
 #  Token comes from .env (set by the HAR pipeline), client from scripts/lib/htb_api.sh.
 #    machine.sh info   <name|id>        profile: name/id/os/difficulty/ip/retired/points
 #    machine.sh ip     <name|id>        just the IP if known (active/spawned), else a hint
-#    machine.sh spawn  <name|id>        spawn + wait for IP (15x12s = 3 min), print it
+#    machine.sh spawn  <name|id>        spawn + wait for IP (15 x 3 min = 45 min), print it
 #    machine.sh active                  the currently active machine + IP   (alias: status)
 #    machine.sh stop   <name|id>        terminate            (alias: terminate)
 #    machine.sh reset  <name|id>        reset
 #    machine.sh submit <name|id> <flag> submit a flag        (alias: own)
 #  A name is resolved to an id via the profile endpoint; a numeric id is used as-is.
-#  Wait time: IP_WAIT_TRIES=15, IP_WAIT_INTERVAL=12 (like redcat1); override via env.
+#  Wait time: IP_WAIT_TRIES=15, IP_WAIT_INTERVAL=180 (15 x 3 min = 45 min); override via env.
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
@@ -37,7 +37,7 @@ case "$cmd" in
   spawn)
     id="$(_id "${1:?usage: machine.sh spawn <name|id>}")"; [ -n "$id" ] || { echo "${r}could not resolve id${n}"; exit 1; }
     echo "[spawn] machine id=$id ..."; htb_spawn "$id" | _msg
-    tries="${IP_WAIT_TRIES:-15}"; interval="${IP_WAIT_INTERVAL:-12}"
+    tries="${IP_WAIT_TRIES:-15}"; interval="${IP_WAIT_INTERVAL:-180}"
     for i in $(seq 1 "$tries"); do
       ip="$(htb_active 2>/dev/null | jq -r '.info.ip // empty' 2>/dev/null)"
       [ -n "$ip" ] && [ "$ip" != null ] && { echo "${g}ip=$ip${n}"; exit 0; }
