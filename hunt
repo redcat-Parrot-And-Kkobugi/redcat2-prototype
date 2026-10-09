@@ -64,13 +64,9 @@ rc2_flag_watcher "$RUNDIR" & FLAG_WATCH_PID=$!
 # background status snapshotter: rewrites status.md every STATUS_INTERVAL (default 600s)
 rc2_status_writer "$RUNDIR" & STATUS_PID=$!
 
-# supervisor/critic in its own tmux session, running alongside the hunt (NO_OVERSEE=1 to skip).
-# It reads the logs + living files and writes supervisor.md on drift; the solver follows it.
-if [ "${NO_OVERSEE:-0}" != "1" ]; then
-  tmux new-session -d -s "${tmux_base}_oversee" \
-    "cd '$RC2_ROOT' && OVERSEE_INTERVAL='${OVERSEE_INTERVAL:-600}' scripts/oversee.sh '$(basename "$RUNDIR")'" 2>/dev/null \
-    && echo "[oversee] started in tmux '${tmux_base}_oversee' (attach to watch; NO_OVERSEE=1 to disable)" || true
-fi
+# supervisor/critic alongside the hunt: a herdr sibling pane when running inside herdr, else a
+# tmux session (default). It reads the logs + living files and writes supervisor.md on drift.
+rc2_launch_oversee "$RUNDIR"
 
 cleanup() {
   [ -n "${_CLEANED:-}" ] && return 0; _CLEANED=1
@@ -79,7 +75,7 @@ cleanup() {
   [ -n "${FLAG_WATCH_PID:-}" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
   [ -n "${STATUS_PID:-}" ] && kill "$STATUS_PID" 2>/dev/null || true
   rc2_write_status "$RUNDIR" 2>/dev/null || true                   # final snapshot
-  tmux kill-session -t "${tmux_base}_oversee" 2>/dev/null || true   # stop the supervisor (watcher, no state)
+  rc2_stop_oversee                                                 # stop supervisor (herdr pane or tmux)
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
