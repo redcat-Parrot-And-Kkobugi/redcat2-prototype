@@ -33,12 +33,14 @@ Re-run the same target to **resume** — state lives on disk, not in the transcr
 ## How it thinks — the Hunt Loop
 
 ```
-ORIENT ─► RESEARCH? ─► EXPERIMENT ─► OBSERVE ─► VERIFY ─► REFLECT ─┐
-   ▲   pick best      smallest test   capture    prove it   update board,   │
-   └── hypothesis     of hypothesis   evidence   truly       re-rank,        │
-       by value       (learn unknown               happened   freeze rabbit  │
-                       first)                                  holes          │
-       └──────────────────────────────────────────────────────────────◄─────┘
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │  1. ORIENT     pick the best hypothesis (confidence × impact ÷ cost)   │
+  │  2. RESEARCH?  learn whatever you don't know cold, before acting       │
+  │  3. EXPERIMENT run the smallest test that moves that hypothesis        │
+  │  4. OBSERVE    capture the full, raw evidence                          │
+  │  5. VERIFY     prove it truly happened (independent check)             │
+  │  6. REFLECT    update the board, re-rank, freeze dead ends             │
+  └───────────────────────────────── loop until user.txt + root.txt ◄──────┘
 ```
 
 Every pass advances one hypothesis with the best (confidence × impact ÷ cost), researches
