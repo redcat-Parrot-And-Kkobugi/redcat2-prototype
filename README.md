@@ -14,6 +14,9 @@ like a researcher instead of running a checklist, scaling its effort to what the
 **Authorized labs only.** `./hunt` runs real commands against the target with
 `--dangerously-skip-permissions`. Point it only at machines you are permitted to test.
 
+**Full guide:** [`docs/GUIDE.md`](docs/GUIDE.md) — setup, every command and flag, every script,
+tmux/herdr, reversing, resume, observability, security, and troubleshooting.
+
 ## Quick start
 
 ```bash
