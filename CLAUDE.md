@@ -95,14 +95,25 @@ shared wordlist tree that is not part of any project. If the HTB API/token is ab
 `./hunt <ip>` still works in IP-only mode (no spawn/submit). Deleting `/home/kali/redcat` does
 not affect redcat2.
 
-## Why tmux, not herdr
+## Terminals: tmux and herdr (division of labor)
 
-herdr.dev (a background runtime for coding agents: persistent panes, working/blocked/idle
-status, a socket API to spawn and coordinate *other* agents) was evaluated and **not
-adopted**. Its coordination features overlap with Claude Code's native sub-agents (used here),
-and it would add a pre-1.0 socket dependency; tmux already handles the one real need —
-holding long-lived interactive target sessions (reverse shells, `msfconsole`, ssh/su). herdr
-remains a candidate only if multi-machine/distributed operation is ever wanted.
+**tmux is the default and does all in-box session work**, each per its need:
+- **`<tmux_base>_main`** — long/progress tools the operator watches live.
+- the agent's own interactive sessions it drives via `send-keys`: reverse shells, `msfconsole`,
+  handlers, and the **`<tmux_base>_dbg`** gdb session.
+- **`<tmux_base>_oversee`** — the supervisor loop.
+tmux is zero-dependency and lives in the agent's shell env, so everything runs on it by default.
+(The OpenVPN tunnel is a separate system daemon — `openvpn --daemon`, logged to `logs/openvpn.log`
+— not a tmux session; it's shared infra and left up across hunts.)
+
+**herdr** ([herdr.dev](https://herdr.dev) — a runtime for coding agents: persistent, status-aware
+sessions, a socket API to coordinate agents, multi-machine over SSH) is the optional **outer /
+operator** layer: hosting one or more hunts (and their overseers) as disconnect-surviving,
+status-detected sessions, and running hunts across several machines. Its *in-process* agent
+coordination overlaps Claude Code's native sub-agents (which redcat2 uses), so herdr is not used
+for that. It is **not installed or wired here** (pre-1.0; its session CLI can't be exercised in
+this environment) — install with `curl -fsSL https://herdr.dev/install.sh | sh` and run the same
+`./hunt` / `scripts/oversee.sh` commands as managed sessions. tmux stays the zero-dependency default.
 
 ## Conventions
 
