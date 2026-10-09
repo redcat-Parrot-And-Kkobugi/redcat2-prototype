@@ -119,7 +119,7 @@ rc2_run_loop() {
       --verbose \
       > >(tee -a "$CONV" | "${PRETTY[@]}" | tee -a "$LOG") 2>&1 &
     RUN_PID=$!          # global on purpose: cleanup() kills it
-    wait "$RUN_PID"; rc=$?
+    rc=0; wait "$RUN_PID" || rc=$?   # errexit-safe: a non-zero agent exit must NOT abort the loop
     if rc2_both_flags "$RUNDIR"; then echo "[hunt] both flags captured — done." | tee -a "$LOG"; break; fi
     if [ "${NO_RESTART:-0}" = "1" ]; then echo "[hunt] NO_RESTART=1 — single run complete (rc=$rc)." | tee -a "$LOG"; break; fi
     if [ "$rc" -eq 0 ]; then echo "[hunt] agent stopped cleanly without both flags (blocker/stuck). Respecting it — not relaunching. Re-run ./hunt $TARGET to continue." | tee -a "$LOG"; break; fi
