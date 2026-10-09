@@ -270,6 +270,9 @@ drive the real service with the exploit `exploit-dev` builds.
 ## 11. Observability
 
 - **Live feed:** `scripts/watch.sh` (second terminal) — reasoning + every command and result.
+  The main `./hunt` terminal stays quiet: it shows only launch chrome (token/htb/vpn/oversee/
+  banner) and the exit summary (report/analyze/stopped). The agent conversation goes to
+  `logs/conv.jsonl` (rendered live by `watch.sh`) and `logs/session_*.log`, not your terminal.
 - **Supervisor:** `oversee.sh` (auto) writes `supervisor.md` only when it sees drift; the solver
   follows a newer `SUPERVISOR_TICK`. Pass an operator directive: `scripts/oversee.sh <slug> "…"`.
 - **Status snapshot:** `status.md` refreshed every `STATUS_INTERVAL` — flags, phase, hypothesis
