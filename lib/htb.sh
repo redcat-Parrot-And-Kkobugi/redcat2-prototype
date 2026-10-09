@@ -37,9 +37,27 @@ _rc2_token_live() {
 # app.hackthebox.com into redcat2/har/; this finds the newest, extracts the aud:6 labs bearer, verifies
 # it against the live API, and writes it to redcat2/.env. Returns 0 if a live token is in place
 # afterwards. Non-fatal: IP-only targets continue without it; name targets need it.
+# Copy the newest *.har from the external capture dir ($HAR_SRC, default the Windows DevTools
+# export folder) into redcat2/har/, if it's newer than what's already there. Keeps timestamps
+# (cp -p) so "newest" stays consistent. No-op if the source dir / file is absent.
+rc2_import_har() {
+  local src="${HAR_SRC:-/mnt/c/Users/Godjs/Desktop/tmp/htb-api-har}"
+  [ -d "$src" ] || { echo "[har] source dir not found: $src (skip import)"; return 0; }
+  local newest; newest="$(ls -t "$src"/*.har 2>/dev/null | head -1)"
+  [ -n "$newest" ] || { echo "[har] no *.har in $src (skip import)"; return 0; }
+  mkdir -p "$RC2_ROOT/har" 2>/dev/null
+  local dst="$RC2_ROOT/har/$(basename "$newest")"
+  if [ -f "$dst" ] && [ ! "$newest" -nt "$dst" ]; then
+    echo "[har] newest ($(basename "$newest")) already imported"
+  else
+    cp -p "$newest" "$dst" && echo "[har] imported newest HAR: $(basename "$newest")"
+  fi
+}
+
 rc2_ensure_htb_token() {
   if [ "${RC2_HTB:-0}" != "1" ]; then echo "[token] scripts/lib/htb_api.sh missing — IP-only mode"; return 1; fi
   if _rc2_token_live; then echo "[token] HTB token OK (live auth)"; return 0; fi
+  rc2_import_har                                   # pull the freshest HAR from the capture dir first
   mkdir -p "$RC2_ROOT/har" 2>/dev/null
   local har extractor="$RC2_ROOT/tools/env-setting/set_token_from_har.sh"
   har="$(ls -t "$RC2_ROOT"/har/*.har 2>/dev/null | head -1)"

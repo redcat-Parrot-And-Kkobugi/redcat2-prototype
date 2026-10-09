@@ -33,14 +33,16 @@ run dir, whose three living-memory files carry all state. The disk *is* the memo
 relaunched. `NO_RESTART=1` runs exactly once. Watch any run live with `scripts/watch.sh`
 (reasoning from `conv.jsonl` + every tool call/result from `tools.jsonl`).
 
-`./hunt` (plumbing in `lib/`, loaded via `lib/bootstrap.sh` → `common/env/htb/run.sh`) loads env, **refreshes the HTB token from the newest HAR
-if it's stale** (`rc2_ensure_htb_token`, via the bundled verified extractor), resolves/
-spawns the box via the HTB API, does a VPN pre-flight, scaffolds `runs/<slug>/`, builds the
-system prompt by concatenating `doctrine/*.md`, then launches `claude -p` with
-`--dangerously-skip-permissions`, `--output-format stream-json`, and the doctrine as
-`--append-system-prompt`. A per-run hook force-logs every tool call; a background watcher
-auto-submits captured flags. The whole HAR → token → resolve/spawn → submit pipeline is
-hands-off and model-independent. On exit `hunt` runs `report.sh` (metrics → `writeup.md`) and
+`./hunt` (plumbing in `lib/`, loaded via `lib/bootstrap.sh` → `common/env/htb/run.sh`) loads
+env, **refreshes the HTB token when stale** (`rc2_ensure_htb_token`: `rc2_import_har` copies
+the newest `*.har` from `$HAR_SRC` — default the Windows DevTools folder — into `har/`, then
+the bundled extractor writes a verified token to `.env`), resolves/spawns the box via the HTB
+API, does a VPN pre-flight, scaffolds `runs/<slug>/`, starts `oversee.sh` in a
+`<tmux_base>_oversee` tmux session (unless `NO_OVERSEE=1`), builds the system prompt by
+concatenating `doctrine/*.md`, then launches `claude -p` with `--dangerously-skip-permissions`,
+`--output-format stream-json`, and the doctrine as `--append-system-prompt`. A per-run hook
+force-logs every tool call; a background watcher auto-submits captured flags. The whole
+HAR → token → resolve/spawn → submit pipeline is hands-off and model-independent. On exit `hunt` runs `report.sh` (metrics → `writeup.md`) and
 `analyze_run.sh` (failure classification → `failure_analysis.md/.json`). Optionally run
 `scripts/oversee.sh <slug>` in a second terminal for a long-horizon supervisor.
 

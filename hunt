@@ -62,11 +62,20 @@ tmux new-session -d -s "$RC2_TMUX" -x 220 -y 50 2>/dev/null || true
 # background flag auto-submitter (returns immediately in IP-only mode)
 rc2_flag_watcher "$RUNDIR" & FLAG_WATCH_PID=$!
 
+# supervisor/critic in its own tmux session, running alongside the hunt (NO_OVERSEE=1 to skip).
+# It reads the logs + living files and writes supervisor.md on drift; the solver follows it.
+if [ "${NO_OVERSEE:-0}" != "1" ]; then
+  tmux new-session -d -s "${tmux_base}_oversee" \
+    "cd '$RC2_ROOT' && OVERSEE_INTERVAL='${OVERSEE_INTERVAL:-600}' scripts/oversee.sh '$(basename "$RUNDIR")'" 2>/dev/null \
+    && echo "[oversee] started in tmux '${tmux_base}_oversee' (attach to watch; NO_OVERSEE=1 to disable)" || true
+fi
+
 cleanup() {
   [ -n "${_CLEANED:-}" ] && return 0; _CLEANED=1
   [ -n "${RUN_PID:-}" ] && { pkill -TERM -P "$RUN_PID" 2>/dev/null || true; kill -TERM "$RUN_PID" 2>/dev/null || true; }
   touch "$RUNDIR/logs/.stop" 2>/dev/null || true
   [ -n "$FLAG_WATCH_PID" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
+  tmux kill-session -t "${tmux_base}_oversee" 2>/dev/null || true   # stop the supervisor (watcher, no state)
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
