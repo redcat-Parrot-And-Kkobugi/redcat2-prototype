@@ -76,6 +76,52 @@ Full methodology: [`doctrine/`](doctrine/). Start at
 | **Memory** | `runs/<slug>/` | Three living files — `worldmodel.md` (verified facts), `hypotheses.md` (attack board), `journal.md` (decision trail) — plus raw evidence dirs. Survives context resets. |
 | **Plumbing** | `hunt`, `lib/`, `scripts/`, `tools/` | Launcher, env/HTB/VPN bootstrap, bundled HTB API client, HAR token extractor, tool-logging hook, flag auto-submit. |
 
+## Layout
+
+```
+redcat2/
+  hunt                       launcher: ./hunt [--fresh] <name|ip> [model] [notes]
+  CLAUDE.md  README.md  .env.example  .gitignore
+  doctrine/                  the brain — concatenated (00..60) into the system prompt
+    00-prime-directive.md      identity, hard rules, done-condition
+    10-hunt-loop.md            ORIENT->RESEARCH->EXPERIMENT->OBSERVE->VERIFY->REFLECT + budgets
+    20-research-and-dorking.md live-internet research + Google dorking + exploit vetting
+    30-interactive-and-tools.md tmux sessions, install/build tools on the fly
+    40-memory-and-state.md     the three living files + run-dir layout
+    50-subagents.md            the team + when to delegate
+    60-reversing.md            IDA export-first + gdb-in-tmux
+  .claude/agents/            multi-model sub-agents (one file each)
+    researcher.md (sonnet)  recon-analyst.md (haiku)  exploit-dev.md (opus)
+    verifier.md (opus)      reverser.md (opus)
+  lib/
+    bootstrap.sh             env, HAR->token, HTB resolve/spawn, VPN, scaffold, flag helpers
+    hook_log.sh              force-log every tool call + result; anti-DoS repeat guard
+  scripts/
+    watch.sh                 live run viewer (reasoning + every tool call/result)
+    burp.sh                  optional Burp-over-MCP (up|status|down|restart)
+    conv_fmt.py              stream-json -> readable transcript
+    lib/htb_api.sh           HTB API client (resolve/spawn/submit)
+  tools/env-setting/
+    set_token_from_har.sh    HAR -> aud:6 labs token -> .env
+    check_token.sh           validate the token against the live API
+  har/                       drop HTB devtools HARs here        (gitignored)
+  runs/<slug>/               per-box workspace, created at run   (gitignored)
+```
+
+Each run directory (the agent's cwd and memory):
+
+```
+runs/<slug>/
+  target.env                 sourceable facts: target_ip, machine_name, id, os, difficulty
+  worldmodel.md              VERIFIED facts only
+  hypotheses.md              ranked attack board (per-hypothesis evidence budgets)
+  journal.md                 append-only decision trail
+  flags.txt                  user=<hex> / root=<hex>  (auto-submitted)
+  recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/   raw evidence
+  logs/                      conv.jsonl, tools.jsonl, raw/, system_prompt.txt, flag_submit.log
+  .claude/                   settings.json (logging hook) + agents -> ../../.claude/agents
+```
+
 ## Design choices
 
 - **Research is first-class.** The agent is expected to hit the live internet — CVEs, vendor

@@ -46,15 +46,16 @@ hands-off and model-independent.
 
 The system has three layers; read them together:
 
-- **The brain is `doctrine/` (prose, not code).** Six Markdown files concatenated into the
-  system prompt — this is the entire methodology. It is intentionally **not** a playbook
-  library. `00-prime-directive` (identity, hard rules, done-condition), `10-hunt-loop` (the
-  ORIENT→RESEARCH→EXPERIMENT→OBSERVE→VERIFY→REFLECT cycle + rabbit-hole budgets),
-  `20-research-and-dorking` (live-internet research as a first-class action; Google dork
-  operators/recipes; exploit vetting), `30-interactive-and-tools` (tmux doctrine; install/
+- **The brain is `doctrine/` (prose, not code).** Seven Markdown files concatenated (in
+  numeric order) into the system prompt — this is the entire methodology. It is intentionally
+  **not** a playbook library. `00-prime-directive` (identity, hard rules, done-condition),
+  `10-hunt-loop` (the ORIENT→RESEARCH→EXPERIMENT→OBSERVE→VERIFY→REFLECT cycle + rabbit-hole
+  budgets), `20-research-and-dorking` (live-internet research as a first-class action; Google
+  dork operators/recipes; exploit vetting), `30-interactive-and-tools` (tmux doctrine; install/
   build tools on the fly), `40-memory-and-state` (the three living files + run-dir layout),
-  `50-subagents` (the team + when to delegate). **To change how the agent thinks, edit a
-  doctrine file** — not the launcher.
+  `50-subagents` (the team + when to delegate), `60-reversing` (IDA export-first + gdb-in-tmux).
+  `hunt` concatenates `doctrine/*.md`, so a new file is picked up automatically. **To change
+  how the agent thinks, edit a doctrine file** — not the launcher.
 
 - **The team is `.claude/agents/*.md` (multi-model sub-agents).** The orchestrator (opus by
   default) delegates via the Task tool. `researcher` (sonnet) does web research + dorking;
@@ -68,9 +69,9 @@ The system has three layers; read them together:
 - **The memory is the run dir — three living files the agent rewrites every loop.**
   `worldmodel.md` (only VERIFIED facts), `hypotheses.md` (the ranked attack board with
   per-hypothesis evidence budgets), `journal.md` (append-only decision trail). Raw evidence
-  lives beside them under `recon/ enum/ loot/ exploit/ research/ tools/ bin/ notes/ logs/`.
-  This is what lets a hunt outlive a single context window — the core requirement for Insane
-  boxes. See `doctrine/40-memory-and-state.md` for the exact formats.
+  lives beside them under `recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/
+  logs/`. This is what lets a hunt outlive a single context window — the core requirement for
+  Insane boxes. See `doctrine/40-memory-and-state.md` for the exact formats.
 
 ## Standalone — bundled plumbing
 
