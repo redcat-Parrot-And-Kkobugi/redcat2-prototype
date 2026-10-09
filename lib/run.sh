@@ -127,3 +127,60 @@ rc2_run_loop() {
     printf '\033[31m[hunt] agent exited rc=%s (crash/overflow) — will relaunch\033[0m\n' "$rc" | tee -a "$LOG"; sleep 3
   done
 }
+
+# ── periodic status snapshot ─────────────────────────────────────────────────
+# rc2_write_status <rundir> — one machine-generated snapshot of the CURRENT situation into
+# <rundir>/status.md (operator view + resume aid). Reads meta.env for start/elapsed. Safe anytime.
+rc2_write_status() {
+  local rundir="$1" L="$1/logs" tb now start elapsed
+  [ -d "$rundir" ] || return 0
+  now="$(date -u +%FT%TZ)"
+  start="$( [ -f "$L/meta.env" ] && . "$L/meta.env" 2>/dev/null; echo "${start_epoch:-$(date +%s)}")"
+  elapsed=$(( ($(date +%s) - start) / 60 ))
+  tb="$( [ -f "$rundir/target.env" ] && . "$rundir/target.env" 2>/dev/null; echo "${tmux_base:-rc2}")"
+  local mn ti os df
+  mn="$( . "$rundir/target.env" 2>/dev/null; echo "${machine_name:-?}")"
+  ti="$( . "$rundir/target.env" 2>/dev/null; echo "${target_ip:-?}")"
+  os="$( . "$rundir/target.env" 2>/dev/null; echo "${os_hint:-?}")"
+  df="$( . "$rundir/target.env" 2>/dev/null; echo "${difficulty:-?}")"
+  {
+    echo "# status — ${mn}"
+    echo "_updated ${now} · elapsed ${elapsed}m · target ${ti} · os ${os} · diff ${df}_"
+    echo "> auto-written periodically — do NOT hand-edit (your record lives in journal.md)."
+    echo
+    echo "## flags"; sed 's/^/- /' "$rundir/flags.txt" 2>/dev/null
+    [ -s "$L/flag_submit.log" ] && { echo; echo "### submissions (recent)"; tail -5 "$L/flag_submit.log" | sed 's/^/- /'; }
+    echo
+    echo "## phase"
+    [ -s "$L/phases.log" ] && tail -1 "$L/phases.log" | sed 's/^/- /' || echo "- (none logged)"
+    echo
+    echo "## hypotheses"
+    echo "- confirmed: $(grep -ciE 'status:[[:space:]]*confirmed' "$rundir/hypotheses.md" 2>/dev/null)   frozen/refuted: $(grep -ciE 'status:[[:space:]]*(frozen|refuted)' "$rundir/hypotheses.md" 2>/dev/null)"
+    grep -nE '^### H' "$rundir/hypotheses.md" 2>/dev/null | sed 's/^[0-9]*:/  /' | head -12
+    echo
+    echo "## journal (recent)"; tail -15 "$rundir/journal.md" 2>/dev/null | sed 's/^/  /'
+    echo
+    echo "## recent tool calls (last 15)"
+    [ -f "$L/tools.jsonl" ] && tail -40 "$L/tools.jsonl" | jq -r 'select(.event=="post") | "- [\(.ts)] \(.tool) \((.command // "")[0:100]) (\(.out_bytes)B)"' 2>/dev/null | tail -15
+    echo
+    echo "## tmux sessions"
+    tmux ls -F '#{session_name}  (#{session_windows}w)' 2>/dev/null | grep -E "^${tb}" | sed 's/^/- /' || echo "- (none)"
+    echo
+    echo "## artifacts"
+    local dd
+    for dd in recon enum loot exploit reversing research tools bin; do
+      printf -- "- %-10s %s files\n" "$dd" "$(find "$rundir/$dd" -type f 2>/dev/null | wc -l | tr -d ' ')"
+    done
+  } > "$rundir/status.md.tmp" 2>/dev/null && mv "$rundir/status.md.tmp" "$rundir/status.md" 2>/dev/null
+}
+
+# rc2_status_writer <rundir> — blocking loop: snapshot every STATUS_INTERVAL (default 600s) until
+# logs/.stop. Background it from hunt:  rc2_status_writer "$R" &  (cleanup kills it + writes a final one)
+rc2_status_writer() {
+  local rundir="$1" interval="${STATUS_INTERVAL:-600}" tick=30 last=0
+  rc2_write_status "$rundir"; last=$(date +%s)
+  while [ ! -f "$rundir/logs/.stop" ]; do
+    sleep "$tick"
+    if [ $(( $(date +%s) - last )) -ge "$interval" ]; then rc2_write_status "$rundir"; last=$(date +%s); fi
+  done
+}
