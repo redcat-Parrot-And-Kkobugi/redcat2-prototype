@@ -143,4 +143,6 @@ the zero-dependency default for everything else.
   solver follows a newer `SUPERVISOR_TICK` (doctrine `10-hunt-loop.md`). Its system prompt is
   `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt).
 - **Reversing** is export-first (`doctrine/60-reversing.md`): IDA → files under `reversing/`,
-  grep locally, query IDA MCP only surgically; gdb runs in a `<tmux_base>_dbg` tmux session.
+  grep locally, query IDA MCP only surgically; gdb runs in a `<tmux_base>_dbg` tmux session,
+  launched with a plugin via the on-PATH wrappers `gdb-pwndbg` (default) / `gdb-gef` / `gdb-peda`
+  (or `init-pwndbg`/`init-gef`/`init-peda` inside gdb). No plugin auto-loads — pick one per session.
