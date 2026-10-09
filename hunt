@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  hunt — redcat2 launcher. Give it an HTB machine name or IP and it runs an
-#  autonomous research hunt (Claude Code headless) until user.txt + root.txt.
+#  hunt — redcat2 launcher. Give it any HTB machine name or IP (Easy through
+#  Insane) and it runs an autonomous research hunt (Claude Code headless) until
+#  user.txt + root.txt. Needs the newest HAR in har/ only when the token is stale.
 #
 #    ./hunt <machine_name|ip> [orchestrator_model] [extra notes]
 #      ./hunt Blizzard                 # name -> HTB API resolves/spawns, opus orchestrator
@@ -24,6 +25,7 @@ RC2_ROOT="$(cd "$(dirname "$0")" && pwd)"
 . "$RC2_ROOT/lib/bootstrap.sh"
 
 rc2_load_env
+rc2_ensure_htb_token || true          # HAR -> live token (name targets need it; IP targets continue without)
 rc2_resolve_target "$TARGET"
 RUNDIR="$(rc2_scaffold)"
 . "$RUNDIR/target.env"
@@ -108,8 +110,10 @@ exploit before running it. Install or build any tool you need on the fly (sudo -
 a password in a command). Run long/interactive commands in tmux session '$RC2_TMUX' (extra sessions: \
 ${tmux_base}_<slug>). Wordlists at \$SECLISTS=$SECLISTS. The moment you read a real flag, append \
 user=<hex> or root=<hex> to flags.txt AND emit <FLAG><hex></FLAG> — a watcher auto-submits it. Act \
-ONLY against $target_ip. If every live hypothesis is refuted and no new surface remains, write a precise \
-blocker note in journal.md and stop — do not grind or fabricate progress. $NOTES"
+ONLY against $target_ip. Scale effort to the box: on easy/medium targets the shortest path is usually a \
+single known technique — find it fast and don't over-engineer; on hard/insane expect to research and build \
+a chain. If every live hypothesis is refuted and no new surface remains, write a precise blocker note in \
+journal.md and stop — do not grind or fabricate progress. $NOTES"
 
 LOG="$RUNDIR/logs/session_$(date +%Y%m%d_%H%M%S).log"
 CONV="$RUNDIR/logs/conv.jsonl"; : > "$CONV"

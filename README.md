@@ -1,8 +1,9 @@
 # redcat2
 
-An **autonomous offensive-research agent** for Hack The Box–style machines, built for
-**Insane-tier and above**. The engine is Claude Code itself; the intelligence is a compact
-*doctrine* that makes the agent reason like a researcher instead of running a checklist.
+An **autonomous offensive-research agent** for Hack The Box–style machines of **every
+difficulty, Easy through Insane** (its edge shows most on the hard ones). The engine is
+Claude Code itself; the intelligence is a compact *doctrine* that makes the agent reason
+like a researcher instead of running a checklist, scaling its effort to what the box demands.
 
 > 한국어 요약: redcat2는 정해진 플레이북을 따라가던 redcat1(기법 조합형)과 달리,
 > **관찰 → 가설 → 조사 → 실험 → 검증 → 방향 재조정** 루프를 스스로 돌리는 자율 연구형
@@ -16,10 +17,16 @@ An **autonomous offensive-research agent** for Hack The Box–style machines, bu
 ## Quick start
 
 ```bash
-cp .env.example .env            # fill CLAUDE_CODE_OAUTH_TOKEN (claude setup-token); HTB_TOKEN optional
+cp .env.example .env            # fill CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)
 ./hunt Blizzard                 # HTB name -> API resolves/spawns; opus orchestrator
 ./hunt 10.10.11.42 opus "notes" # raw IP (IP-only mode if no HTB token)
 ```
+
+**HTB token is hands-off.** Save a devtools HAR from a logged-in `app.hackthebox.com`
+(Network tab → Save all as HAR) into `har/`. When the labs token is missing or expired,
+`./hunt` finds the newest HAR, extracts and verifies the `aud:6` bearer, and writes it
+back — then resolves the machine (OS/difficulty/IP), spawns it if needed, and auto-submits
+captured flags via the API. This is the same pipeline as redcat1, reused as-is.
 
 Re-run the same target to **resume** — state lives on disk, not in the transcript.
 

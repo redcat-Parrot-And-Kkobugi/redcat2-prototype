@@ -8,9 +8,10 @@ RC2_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RC1_DIR="${RC1_DIR:-/home/kali/redcat}"           # borrow tokens/API/wordlists from redcat1
 
 rc2_load_env() {
-  # Prefer redcat2/.env, else fall back to redcat1/.env for tokens.
-  if [ -f "$RC2_ROOT/.env" ]; then set -a; . "$RC2_ROOT/.env"; set +a
-  elif [ -f "$RC1_DIR/.env" ]; then set -a; . "$RC1_DIR/.env"; set +a; fi
+  # redcat1/.env is the BASE (the HAR token automation writes HTB_TOKEN here);
+  # redcat2/.env layers on top so redcat2 can override anything locally.
+  if [ -f "$RC1_DIR/.env" ]; then set -a; . "$RC1_DIR/.env"; set +a; fi
+  if [ -f "$RC2_ROOT/.env" ]; then set -a; . "$RC2_ROOT/.env"; set +a; fi
   : "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN (run: claude setup-token) in redcat2/.env or $RC1_DIR/.env}"
   # SecLists: honour SECLISTS_DIR from env, else common location.
   export SECLISTS="${SECLISTS:-${SECLISTS_DIR:-$HOME/files_etc/SecLists}}"
@@ -21,6 +22,34 @@ rc2_load_env() {
 }
 
 _rc2_is_ip() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+
+# Is the current HTB_TOKEN live against the labs API? (auth works -> response has an "info" key)
+_rc2_token_live() {
+  [ "${RC2_HTB:-0}" = "1" ] && [ -n "${HTB_TOKEN:-}" ] || return 1
+  htb_active 2>/dev/null | jq -e 'has("info")' >/dev/null 2>&1
+}
+
+# HAR-driven token automation (reuses redcat1's verified extractor). Drop a fresh devtools HAR from a
+# logged-in app.hackthebox.com into redcat2/har/ (or redcat1/har/); this finds the newest, extracts the
+# aud:6 labs bearer, verifies it against the live API, and writes it to redcat1/.env. Returns 0 if a live
+# token is in place afterwards. Non-fatal: IP-only targets continue without it; name targets need it.
+rc2_ensure_htb_token() {
+  if [ "${RC2_HTB:-0}" != "1" ]; then echo "[token] htb_api.sh not found under $RC1_DIR — IP-only mode"; return 1; fi
+  if _rc2_token_live; then echo "[token] HTB token OK (live auth)"; return 0; fi
+  mkdir -p "$RC2_ROOT/har" 2>/dev/null
+  local har extractor="$RC1_DIR/tools/env-setting/set_token_from_har.sh"
+  har="$(ls -t "$RC2_ROOT"/har/*.har "$RC1_DIR"/har/*.har 2>/dev/null | head -1)"
+  if [ -n "$har" ] && [ -x "$extractor" ]; then
+    echo "[token] token missing/expired — extracting from newest HAR: $(basename "$har")"
+    "$extractor" "$har" >/dev/null 2>&1 || true
+    rc2_load_env                      # re-source: the fresh token was written to $RC1_DIR/.env
+    if _rc2_token_live; then echo "[token] refreshed from HAR ✓"; return 0; fi
+    echo "[token] HAR found but token still invalid (stale HAR, or not captured while logged in)"
+  else
+    echo "[token] no usable HAR in $RC2_ROOT/har/ or $RC1_DIR/har/ (save one from app.hackthebox.com devtools)"
+  fi
+  return 1
+}
 
 # Resolve target -> sets globals: TARGET_IP MACHINE_NAME MACHINE_ID OS_HINT DIFFICULTY
 rc2_resolve_target() {

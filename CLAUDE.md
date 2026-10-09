@@ -5,9 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 `redcat2` is an **autonomous offensive-research agent** that solves Hack The Box–style
-machines, targeting **Insane-tier and above**. The engine is **Claude Code itself**
-(`claude -p` headless). The `./hunt` launcher executes **real commands on the attack host**
-against the `--target`. **Authorized labs only** (HTB, your own range). Nothing is sandboxed.
+machines of **every difficulty, Easy through Insane** (the design's edge shows most on the
+hard ones). The engine is **Claude Code itself** (`claude -p` headless). The `./hunt`
+launcher executes **real commands on the attack host** against the target. **Authorized
+labs only** (HTB, your own range). Nothing is sandboxed.
 
 redcat2 is a deliberate break from its predecessor (`/home/kali/redcat`, "redcat1"), which
 followed a fixed 8-phase pipeline + per-service playbooks and stalled when a box needed
@@ -28,11 +29,14 @@ Resume is **automatic and implicit**: re-launching the same target re-enters the
 run dir, whose three living-memory files carry all state. There is no separate resume flag —
 the disk *is* the memory.
 
-`./hunt` (see `lib/bootstrap.sh`) loads env, resolves/spawns the box via the HTB API, does a
-VPN pre-flight, scaffolds `runs/<slug>/`, builds the system prompt by concatenating
-`doctrine/*.md`, then launches `claude -p` with `--dangerously-skip-permissions`,
-`--output-format stream-json`, and the doctrine as `--append-system-prompt`. A per-run hook
-force-logs every tool call; a background watcher auto-submits flags.
+`./hunt` (see `lib/bootstrap.sh`) loads env, **refreshes the HTB token from the newest HAR
+if it's stale** (`rc2_ensure_htb_token`, reusing redcat1's verified extractor), resolves/
+spawns the box via the HTB API, does a VPN pre-flight, scaffolds `runs/<slug>/`, builds the
+system prompt by concatenating `doctrine/*.md`, then launches `claude -p` with
+`--dangerously-skip-permissions`, `--output-format stream-json`, and the doctrine as
+`--append-system-prompt`. A per-run hook force-logs every tool call; a background watcher
+auto-submits captured flags. The whole HAR → token → resolve/spawn → submit pipeline is
+hands-off and model-independent.
 
 ## Architecture (the big picture)
 
@@ -67,8 +71,11 @@ The system has three layers; read them together:
 
 redcat2 owns its brain but borrows redcat1's proven plumbing, resolved at launch by
 `lib/bootstrap.sh`:
-- **`.env`** — tokens are read from `redcat2/.env` if present, else `$RC1_DIR/.env`.
+- **`.env`** — `$RC1_DIR/.env` is the base (the HAR automation writes `HTB_TOKEN` there);
+  `redcat2/.env` layers on top to override locally. Keep the HTB token in redcat1's `.env`.
 - **`scripts/lib/htb_api.sh`** — sourced for HTB resolve/spawn/submit (v4 machine/vm, v5 own).
+- **`tools/env-setting/set_token_from_har.sh`** — the HAR → `aud:6` bearer extractor, reused
+  verbatim by `rc2_ensure_htb_token`. Drop HARs in `redcat2/har/` or `redcat1/har/`.
 - **SecLists** (`$SECLISTS`) and other `files_etc` resources.
 - **`scripts/conv_fmt.py`** — used to pretty-render the stream-json log if present.
 
