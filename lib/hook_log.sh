@@ -15,7 +15,7 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
 [ -n "$cwd" ] || cwd="${CLAUDE_PROJECT_DIR:-$PWD}"
 logdir="$cwd/logs"; mkdir -p "$logdir/raw" 2>/dev/null
 jsonl="$logdir/tools.jsonl"
-ts="$(date +%Y%m%dT%H%M%S.%3N 2>/dev/null || date +%s)"
+ts="$(date -u +%Y%m%dT%H%M%S.%3N 2>/dev/null || date +%s)"   # UTC, to match status.md / analyze / journal
 
 # Guarded = expensive/noisy target actions; exempt = shell listeners (re-run freely).
 GUARD_RE='nmap|masscan|rustscan|gobuster|ffuf|feroxbuster|nikto|nuclei|wpscan|nxc |netexec|crackmapexec|evil-winrm| hydra|medusa|xfreerdp|kerbrute'
