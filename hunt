@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  hunt — redcat2 launcher. Give it an HTB machine name or IP and it runs an
+#  autonomous research hunt (Claude Code headless) until user.txt + root.txt.
+#
+#    ./hunt <machine_name|ip> [orchestrator_model] [extra notes]
+#      ./hunt Blizzard                 # name -> HTB API resolves/spawns, opus orchestrator
+#      ./hunt 10.10.11.42 opus "the web app on 443 looks custom"
+#      ./hunt Blizzard sonnet          # cheaper orchestrator
+#
+#  Resume is automatic: re-launch the same target and it reads the run dir's
+#  worldmodel.md / hypotheses.md / journal.md and continues (memory lives on disk).
+#
+#  Authorized labs only. Runs with --dangerously-skip-permissions: Claude executes
+#  shell commands without asking. Only ever point it at a host you may test.
+# =============================================================================
+set -euo pipefail
+
+TARGET="${1:?usage: hunt <machine_name|ip> [model] [notes]}"
+MODEL="${2:-opus}"            # orchestrator model; Insane wants the strongest. Sub-agents pick their own.
+NOTES="${3:-}"
+
+RC2_ROOT="$(cd "$(dirname "$0")" && pwd)"
+. "$RC2_ROOT/lib/bootstrap.sh"
+
+rc2_load_env
+rc2_resolve_target "$TARGET"
+RUNDIR="$(rc2_scaffold)"
+. "$RUNDIR/target.env"
+: "${target_ip:?target_ip empty — set it in $RUNDIR/target.env and re-run}"
+
+export TMPDIR="$RUNDIR/tmp"; mkdir -p "$TMPDIR"
+
+# Non-interactive sudo via askpass (so `sudo -A` never hangs and the password is never on a cmd line).
+if [ -n "${SUDO_PASS:-}" ]; then
+  export SUDO_PASS
+  ASKPASS="$TMPDIR/.askpass"; printf '#!/bin/sh\nprintf "%%s\\n" "$SUDO_PASS"\n' > "$ASKPASS"; chmod 700 "$ASKPASS"
+  export SUDO_ASKPASS="$ASKPASS"; SUDO_A="sudo -A"
+else
+  SUDO_A="sudo -n"
+fi
+
+rc2_ensure_vpn "$target_ip" "$SUDO_A"
+
+# shared tmux session for long/interactive tools (watchable live: tmux attach -t <tmux_base>_main)
+export RC2_TMUX="${tmux_base}_main"
+tmux new-session -d -s "$RC2_TMUX" -x 220 -y 50 2>/dev/null || true
+
+# ── background flag auto-submitter: watch flags.txt, submit new hex flags via the HTB API ──
+FLAG_WATCH_PID=""
+if [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ]; then
+  (
+    seen=""
+    while :; do
+      if [ -f "$RUNDIR/flags.txt" ]; then
+        while IFS= read -r line; do
+          f="$(printf '%s' "$line" | grep -oiE '[0-9a-f]{32}' | head -1)"
+          [ -n "$f" ] || continue
+          case " $seen " in *" $f "*) continue;; esac
+          seen="$seen $f"
+          resp="$(htb_submit_flag "$machine_id" "$f" 2>/dev/null)"
+          printf '%s submit %s -> %s\n' "$(date -u +%FT%TZ)" "$f" "$(printf '%s' "$resp" | jq -rc '.message // .status // .' 2>/dev/null)" >> "$RUNDIR/logs/flag_submit.log"
+        done < "$RUNDIR/flags.txt"
+      fi
+      [ -f "$RUNDIR/logs/.stop" ] && break
+      sleep 20
+    done
+  ) &
+  FLAG_WATCH_PID=$!
+fi
+
+cleanup() {
+  [ -n "${_CLEANED:-}" ] && return 0; _CLEANED=1
+  [ -n "${RUN_PID:-}" ] && { pkill -TERM -P "$RUN_PID" 2>/dev/null || true; kill -TERM "$RUN_PID" 2>/dev/null || true; }
+  touch "$RUNDIR/logs/.stop" 2>/dev/null || true
+  [ -n "$FLAG_WATCH_PID" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
+  # Solved only when BOTH flags present → tear down tmux. Otherwise preserve state for resume.
+  if [ -f "$RUNDIR/flags.txt" ] && grep -qiE '^user=[0-9a-f]{32}' "$RUNDIR/flags.txt" && grep -qiE '^root=[0-9a-f]{32}' "$RUNDIR/flags.txt"; then
+    tmux ls -F '#{session_name}' 2>/dev/null | grep -E "^${tmux_base}(_|$)" | while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
+    echo "[hunt] SOLVED — both flags captured. tmux torn down. Run dir: $RUNDIR"
+  else
+    echo "[hunt] stopped (not both flags). State PRESERVED for resume (tmux + run dir kept). Re-run: ./hunt $TARGET"
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+RUN_PID=""
+
+# ── system prompt = the doctrine (the brain), in order ──
+SYSPROMPT="$(cat "$RC2_ROOT"/doctrine/00-prime-directive.md \
+                 "$RC2_ROOT"/doctrine/10-hunt-loop.md \
+                 "$RC2_ROOT"/doctrine/20-research-and-dorking.md \
+                 "$RC2_ROOT"/doctrine/30-interactive-and-tools.md \
+                 "$RC2_ROOT"/doctrine/40-memory-and-state.md \
+                 "$RC2_ROOT"/doctrine/50-subagents.md 2>/dev/null)"
+
+PROMPT="You are redcat2, hunting the authorized lab machine ${machine_name:-$target_ip} at \
+target_ip=$target_ip (os=${os_hint:-unknown}, difficulty=${difficulty:-unknown}). Your cwd is this \
+box's run dir; everything is relative to it. Your memory is worldmodel.md, hypotheses.md, journal.md \
+— READ ALL THREE FIRST (they may already hold progress from a prior session; continue, do not restart), \
+then run the Hunt Loop from your system prompt until user.txt AND root.txt are captured and VERIFIED. \
+Keep the three living files current every loop; keep raw output under recon/ enum/ loot/ exploit/ \
+research/. Delegate: web research & dorking -> researcher; walls of output -> recon-analyst; exploit \
+code -> exploit-dev; verifying a win or a risky/one-shot action -> verifier (use the Task tool). \
+Research the live internet whenever an action depends on something you don't know cold, and read any \
+exploit before running it. Install or build any tool you need on the fly (sudo -A for root; never put \
+a password in a command). Run long/interactive commands in tmux session '$RC2_TMUX' (extra sessions: \
+${tmux_base}_<slug>). Wordlists at \$SECLISTS=$SECLISTS. The moment you read a real flag, append \
+user=<hex> or root=<hex> to flags.txt AND emit <FLAG><hex></FLAG> — a watcher auto-submits it. Act \
+ONLY against $target_ip. If every live hypothesis is refuted and no new surface remains, write a precise \
+blocker note in journal.md and stop — do not grind or fabricate progress. $NOTES"
+
+LOG="$RUNDIR/logs/session_$(date +%Y%m%d_%H%M%S).log"
+CONV="$RUNDIR/logs/conv.jsonl"; : > "$CONV"
+printf '%s\n' "$SYSPROMPT" > "$RUNDIR/logs/system_prompt.txt"
+jq -cn --arg sp "$SYSPROMPT" '{type:"input",subtype:"system_prompt",chars:($sp|length)}' >> "$CONV" 2>/dev/null || true
+jq -cn --arg p "$PROMPT" --arg m "$MODEL" '{type:"input",subtype:"launch",model:$m,prompt:$p}' >> "$CONV" 2>/dev/null || true
+
+printf '\n\033[36m[redcat2]\033[0m hunting %s (%s) — run dir: %s\n' "${machine_name:-$target_ip}" "$target_ip" "$RUNDIR"
+printf '\033[2m  watch:  tmux attach -t %s   |   tail -f %s\n  memory: %s/{worldmodel,hypotheses,journal}.md\033[0m\n\n' "$RC2_TMUX" "$LOG" "$RUNDIR"
+
+cd "$RUNDIR"
+
+# optional pretty renderer from redcat1 if present; else raw tee
+PRETTY=(cat); [ -f "$RC1_DIR/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC1_DIR/scripts/conv_fmt.py")
+
+claude -p "$PROMPT" \
+  --output-format stream-json \
+  --model "$MODEL" \
+  --append-system-prompt "$SYSPROMPT" \
+  --dangerously-skip-permissions \
+  --verbose \
+  > >(tee -a "$CONV" | "${PRETTY[@]}" | tee -a "$LOG") 2>&1 &
+RUN_PID=$!
+wait "$RUN_PID" 2>/dev/null || true

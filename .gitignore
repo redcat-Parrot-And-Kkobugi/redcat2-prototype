@@ -1,0 +1,14 @@
+# secrets & per-run data — never commit
+.env
+.env.bak*
+runs/
+tmp/
+har/
+*.ovpn
+*.har
+*.key
+*.pem
+id_rsa*
+loot/
+__pycache__/
+*.pyc
