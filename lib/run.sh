@@ -6,14 +6,15 @@
 
 # Scaffold the run dir + seed the three living-memory files. Sets global RUNDIR, echoes it.
 rc2_scaffold() {
-  local slug; slug="$(printf '%s' "${MACHINE_NAME:-$TARGET_IP}" | tr '[:upper:] ' '[:lower:]_' | tr -cd 'a-z0-9_.-')"
+  # slug = the real machine name, case preserved (spaces -> _, unsafe chars dropped).
+  local slug; slug="$(printf '%s' "${MACHINE_NAME:-$TARGET_IP}" | tr ' ' '_' | tr -cd 'A-Za-z0-9_.-')"
   RUNDIR="$RC2_ROOT/runs/$slug"
   # FRESH=1 -> archive any existing run so this starts clean (old memory is kept, not deleted).
   if [ "${FRESH:-}" = "1" ] && [ -d "$RUNDIR" ]; then
     local bak="$RUNDIR.bak.$(date +%s)"; mv "$RUNDIR" "$bak"
     echo "[fresh] archived previous run -> $(basename "$bak")" >&2
   fi
-  mkdir -p "$RUNDIR"/{recon,enum,loot/{hashes,keys,tickets,files},exploit,tools,bin,research,reversing,notes,logs/raw,tmp,.claude}
+  mkdir -p "$RUNDIR"/{tmp,recon,enum,loot/{hashes,keys,tickets,files},exploit,tools,bin,research,reversing,notes,logs/raw,tmp,.claude}
   # agents available to `claude -p` (cwd = run dir): symlink the team in.
   [ -e "$RUNDIR/.claude/agents" ] || ln -s "$RC2_ROOT/.claude/agents" "$RUNDIR/.claude/agents" 2>/dev/null || true
   # per-run hook registration (force-log every tool call + target-safety guard)

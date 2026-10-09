@@ -16,6 +16,10 @@ something off-script. redcat2 replaces that **procedural, technique-combination*
 with an **epistemic one**: observe → hypothesize → research → experiment → verify → reflect,
 looping until the flags fall. The agent reasons from evidence and live research, not a recipe.
 
+The full operator reference — setup, every command and flag, every script, tmux/herdr,
+reversing, resume, observability, and troubleshooting — is `docs/GUIDE.md` (and `README.md`).
+This file is the orientation for working *on* the codebase.
+
 ## How it runs
 
 ```bash
@@ -42,7 +46,10 @@ sibling pane if run inside herdr, else a `<tmux_base>_oversee` tmux session (unl
 builds the system prompt by
 concatenating `doctrine/*.md`, then launches `claude -p` with `--dangerously-skip-permissions`,
 `--output-format stream-json`, and the doctrine as `--append-system-prompt`. A per-run hook
-force-logs every tool call; a background watcher auto-submits captured flags. The whole
+(`lib/hook_log.sh`, registered in `<run>/.claude/settings.json`) force-logs every tool call and
+its full result independent of model behavior, and blocks (exit 2) identical-command/identical-result
+repeats to guard the target against a stuck/throttle/DoS loop; a background watcher auto-submits
+captured flags. The whole
 HAR → token → resolve/spawn → submit pipeline is hands-off and model-independent. On exit `hunt` runs `report.sh` (metrics → `writeup.md`) and
 `analyze_run.sh` (failure classification → `failure_analysis.md/.json`). Optionally run
 `scripts/oversee.sh <slug>` in a second terminal for a long-horizon supervisor.
