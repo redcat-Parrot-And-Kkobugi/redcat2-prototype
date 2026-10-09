@@ -45,6 +45,9 @@ to run once).
 scripts/watch.sh                 # newest run   (FULL=1 for whole outputs, NOCONV=1 tool-feed only)
 ```
 
+**VPN** is handled for you: if the target isn't already routed, `./hunt` brings the HTB tunnel
+up as an `openvpn --daemon` (logged to the run dir) and leaves it up across hunts.
+
 **Optional Burp** for web-heavy boxes — bring it up first and `./hunt` inherits `mcp__burp__*`:
 
 ```bash
@@ -148,9 +151,13 @@ runs/<slug>/
   [`doctrine/20-research-and-dorking.md`](doctrine/20-research-and-dorking.md).
 - **Multiple models by role.** Cheap bulk parsing on haiku, research on sonnet, hard
   reasoning and verification on opus — assigned per sub-agent, tunable per box.
-- **tmux over herdr.** [herdr.dev](https://herdr.dev/) was evaluated; its agent-coordination
-  overlaps Claude Code's native sub-agents, so tmux (proven for holding interactive sessions)
-  was kept and herdr left as a future multi-machine option. Rationale in `CLAUDE.md`.
+- **tmux and herdr, each per its need.** tmux (zero-dependency, default) does all in-box
+  session work: the `_main` watch session, the agent's interactive sessions (reverse shells,
+  `msfconsole`, the `_dbg` gdb session), and the `_oversee` loop. (The VPN is a separate
+  `openvpn` daemon, not tmux.) [herdr.dev](https://herdr.dev/) is the optional outer/operator
+  runtime for hosting hunts as disconnect-surviving, status-aware sessions and across multiple
+  machines; its in-process agent coordination overlaps Claude Code's native sub-agents, so it's
+  not used for that. Full division of labor in `CLAUDE.md`.
 - **Standalone.** No runtime dependency on any sibling project — the HTB API client, HAR
   token extractor, and log renderer are vendored into this tree, and it reads only its own
   `.env`. The design lineage is redcat1, but deleting redcat1 does not affect redcat2. The
