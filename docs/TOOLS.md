@@ -39,6 +39,7 @@ The launcher. Runs one autonomous hunt (headless Claude Code) against a target u
 | `MAX_RESTARTS` | 20 | auto-relaunch budget on crash/overflow (non-zero exit) |
 | `NO_RESTART` | 0 | `1` = run the agent exactly once |
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
+| `NO_STOP` | 0 | `1` = on solve, keep the HTB machine up (default: terminate it) |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `IP_WAIT_TRIES` | 15 | spawn/IP poll attempts |

@@ -95,6 +95,7 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `MAX_RESTARTS` | 20 | auto-relaunch budget on crash/overflow |
 | `NO_RESTART` | 0 | `1` = run the agent once, no auto-relaunch |
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
+| `NO_STOP` | 0 | `1` = on solve, don't terminate the HTB machine (keep the box up) |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
@@ -108,7 +109,9 @@ load `.env` → refresh HTB token from newest HAR if stale → resolve/spawn the
 VPN pre-flight (`openvpn --daemon` if `HTB_OVPN` set) → scaffold `runs/<slug>/` → start the flag
 auto-submitter, the `status.md` writer, and the supervisor (herdr pane or tmux) → build the
 system prompt from `doctrine/*.md` → run `claude -p` in the resilient loop → on exit write
-`writeup.md` + `failure_analysis.*` and a final `status.md`.
+`writeup.md` + `failure_analysis.*` and a final `status.md`. **On a solve** (both flags) it also
+**terminates the HTB machine** (unless `NO_STOP=1`) and tears down the run's tmux sessions;
+otherwise state is preserved for resume.
 
 ---
 
