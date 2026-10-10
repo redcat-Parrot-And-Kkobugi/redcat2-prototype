@@ -12,6 +12,15 @@ g=$'\033[32m'; r=$'\033[31m'; y=$'\033[33m'; c=$'\033[36m'; d=$'\033[2m'; n=$'\0
 # rc2_utc — one UTC timestamp format shared by journal / status / retrospectives
 rc2_utc() { date -u +%FT%TZ; }
 
+# rc2_load_target <rundir> — source <rundir>/target.env into the current shell (sets machine_name,
+# target_ip, os_hint, difficulty, machine_id, tmux_base). Safe no-op if the file is absent. Callers
+# that must not leak these into their own scope should call it inside a subshell.
+rc2_load_target() {
+  local f="${1:-.}/target.env"
+  [ -f "$f" ] && . "$f"
+  return 0
+}
+
 # ── flags (HTB flag = 32-hex) — the single source of flag parsing ──────────────
 RC2_FLAG_RE='[0-9a-fA-F]{32}'
 # rc2_flag_value <user|root> <rundir> — the captured hex from flags.txt, or empty.

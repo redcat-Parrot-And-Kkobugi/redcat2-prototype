@@ -14,7 +14,7 @@ RUNDIR="$(rc2_resolve_rundir "${1:?usage: report.sh <rundir|name|ip>}")"
 [ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "report: no run dir"; exit 0; }
 LOGS="$RUNDIR/logs"; J="$LOGS/tools.jsonl"
 # shellcheck source=/dev/null
-[ -f "$RUNDIR/target.env" ] && . "$RUNDIR/target.env"
+rc2_load_target "$RUNDIR"
 # shellcheck source=/dev/null
 [ -f "$LOGS/meta.env" ] && . "$LOGS/meta.env"   # model, start_epoch
 
@@ -96,21 +96,20 @@ EOF
 # ── narrative writeup (auto from worldmodel.md + journal.md) ─────────────────────
 # Assembled with printf/sed (NOT an unquoted heredoc) so file content is never shell-evaluated.
 # Style: emoji banner by default (WRITEUP_EMOJI=1); set WRITEUP_EMOJI=0 for a plain ASCII fallback.
-WM="$RUNDIR/worldmodel.md"; JO="$RUNDIR/journal.md"
-uf="$(rc2_flag_value user "$RUNDIR")"
-rf="$(rc2_flag_value root "$RUNDIR")"
-emoji="${WRITEUP_EMOJI:-1}"
-if [ "$emoji" = "1" ]; then fF='🏴 '; fM='🖥️'; fU='👤'; fR='🔑'; else fF=''; fM='•'; fU='•'; fR='•'; fi
-chain="$(awk -v e="$emoji" '
-  /^[0-9]{4}-/{
-    m="🔹"; if(e!="1")m="-";
-    if(e=="1"){ if($0~/FOOTHOLD/)m="🎯"; else if($0~/USER/)m="👤"; else if($0~/ROOT/)m="🧗"; else if($0~/PIVOT/)m="🔀"; else if($0~/START/)m="🧭"; }
-    print "- " m " " $0;
-  }' "$JO" 2>/dev/null | head -30)"
-tools_written="$(cd "$RUNDIR" 2>/dev/null && find tools exploit -maxdepth 2 -type f 2>/dev/null | sed 's#^#- #' | head -40)"
-
-nf="$(mktemp)"
-{
+# _build_writeup_narrative — emit the auto writeup narrative (worldmodel + journal) on stdout.
+# Uses RUNDIR + the target.env fields (machine_name/target_ip/os_hint/difficulty) from the outer scope.
+_build_writeup_narrative() {
+  local WM="$RUNDIR/worldmodel.md" JO="$RUNDIR/journal.md" uf rf emoji fF fM fU fR chain tools_written
+  uf="$(rc2_flag_value user "$RUNDIR")"; rf="$(rc2_flag_value root "$RUNDIR")"
+  emoji="${WRITEUP_EMOJI:-1}"
+  if [ "$emoji" = "1" ]; then fF='🏴 '; fM='🖥️'; fU='👤'; fR='🔑'; else fF=''; fM='•'; fU='•'; fR='•'; fi
+  chain="$(awk -v e="$emoji" '
+    /^[0-9]{4}-/{
+      m="🔹"; if(e!="1")m="-";
+      if(e=="1"){ if($0~/FOOTHOLD/)m="🎯"; else if($0~/USER/)m="👤"; else if($0~/ROOT/)m="🧗"; else if($0~/PIVOT/)m="🔀"; else if($0~/START/)m="🧭"; }
+      print "- " m " " $0;
+    }' "$JO" 2>/dev/null | head -30)"
+  tools_written="$(cd "$RUNDIR" 2>/dev/null && find tools exploit -maxdepth 2 -type f 2>/dev/null | sed 's#^#- #' | head -40)"
   printf '%s\n' "<!-- WRITEUP:START (auto by report.sh from worldmodel.md + journal.md — curated prose ABOVE this block is preserved) -->"
   printf '# %s%s — %s\n\n' "$fF" "${machine_name:-?}" "${target_ip:-?}"
   printf -- '- %s %s · difficulty %s\n'       "$fM" "${os_hint:-?}" "${difficulty:-?}"
@@ -123,7 +122,9 @@ nf="$(mktemp)"
   printf '\n## Tools & exploits written\n'
   if [ -n "$tools_written" ]; then printf '%s\n' "$tools_written"; else printf '%s\n' "_(none)_"; fi
   printf '%s\n' "<!-- WRITEUP:END -->"
-} > "$nf"
+}
+
+nf="$(mktemp)"; _build_writeup_narrative > "$nf"
 
 WU="$RUNDIR/writeup.md"; touch "$WU"
 # refresh/insert the narrative block (file-based splice → safe for any content)
