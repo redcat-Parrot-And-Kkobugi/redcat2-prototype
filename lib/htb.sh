@@ -20,7 +20,7 @@ _rc2_record_flag() {
 _rc2_submit_flag() {
   local rundir="$1" kind="$2" val="$3" sub="$1/logs/.submitted" log="$1/logs/flag_submit.log"
   grep -qiE "^${kind}$" "$sub" 2>/dev/null && return 0
-  local stamp resp msg; stamp="$(date -u +%FT%TZ)"
+  local stamp resp msg; stamp="$(rc2_utc)"
   resp="$(htb_submit_flag "$machine_id" "$val" 2>/dev/null)"
   msg="$(printf '%s' "$resp" | jq -r '.message // .status // .' 2>/dev/null | head -1)"
   printf '%s SUBMIT %s=%s id=%s -> %s\n' "$stamp" "$kind" "$val" "$machine_id" "${msg:-$resp}" >> "$log"
@@ -37,33 +37,27 @@ _rc2_submit_flag() {
 #   2) enforced: a logged command that read user.txt/root.txt (from logs/tools.jsonl + logs/raw/),
 #                so a flag is submitted even if the agent never updated flags.txt.
 rc2_flag_scan_once() {
-  local rundir="$1" logs="$1/logs" hex='[0-9a-fA-F]{32}'
+  local rundir="$1" logs="$1/logs"
   [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ] || return 0
   mkdir -p "$logs"; touch "$logs/.submitted"
   # 1) manual channel — flags.txt (user=/root=)
-  if [ -f "$rundir/flags.txt" ]; then
-    local u r
-    u="$(grep -ioE "^user=$hex" "$rundir/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
-    r="$(grep -ioE "^root=$hex" "$rundir/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
-    [ -n "$u" ] && _rc2_submit_flag "$rundir" user "$u"
-    [ -n "$r" ] && _rc2_submit_flag "$rundir" root "$r"
-  fi
+  local u r
+  u="$(rc2_flag_value user "$rundir")"; [ -n "$u" ] && _rc2_submit_flag "$rundir" user "$u"
+  r="$(rc2_flag_value root "$rundir")"; [ -n "$r" ] && _rc2_submit_flag "$rundir" root "$r"
   # 2) enforced channel — a logged command that read user.txt/root.txt
-  if [ -f "$logs/tools.jsonl" ]; then
-    local line cmd of val
-    while IFS= read -r line; do
-      cmd="$(printf '%s' "$line" | jq -r 'select(.event=="post") | .command // empty' 2>/dev/null)"
-      [ -n "$cmd" ] || continue
-      case "$cmd" in
-        *root.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
-                    val="$(grep -ioE "$hex" "$logs/$of" 2>/dev/null | head -1)"
-                    [ -n "$val" ] && { _rc2_record_flag "$rundir" root "$val"; _rc2_submit_flag "$rundir" root "$val"; } ;;
-        *user.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
-                    val="$(grep -ioE "$hex" "$logs/$of" 2>/dev/null | head -1)"
-                    [ -n "$val" ] && { _rc2_record_flag "$rundir" user "$val"; _rc2_submit_flag "$rundir" user "$val"; } ;;
-      esac
-    done < "$logs/tools.jsonl"
-  fi
+  local line cmd of val
+  rc2_tl_posts "$logs/tools.jsonl" | while IFS= read -r line; do
+    cmd="$(printf '%s' "$line" | jq -r '.command // empty' 2>/dev/null)"
+    [ -n "$cmd" ] || continue
+    case "$cmd" in
+      *root.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
+                  val="$(rc2_hex_in "$logs/$of")"
+                  [ -n "$val" ] && { _rc2_record_flag "$rundir" root "$val"; _rc2_submit_flag "$rundir" root "$val"; } ;;
+      *user.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
+                  val="$(rc2_hex_in "$logs/$of")"
+                  [ -n "$val" ] && { _rc2_record_flag "$rundir" user "$val"; _rc2_submit_flag "$rundir" user "$val"; } ;;
+    esac
+  done
 }
 
 # Blocking watcher loop: scan both channels every FLAG_INTERVAL s (default 300 = 5 min). hunt also

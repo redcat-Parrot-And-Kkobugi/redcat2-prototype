@@ -20,6 +20,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$ROOT/lib/common.sh"
+. "$ROOT/lib/tools_log.sh"
 RUNDIR="$(rc2_resolve_rundir "${1:-}")"
 [ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "analyze_run: no run dir"; exit 0; }
 
@@ -34,7 +35,8 @@ diff="unknown"
 # ── outcome from flags.txt ───────────────────────────────────────────────────
 # uf/rf not u/r — common.sh exports single-letter color globals (r=red); don't shadow them
 uf=0 rf=0
-[ -f "$RUNDIR/flags.txt" ] && { grep -qiE '^user=[0-9a-f]{32}' "$RUNDIR/flags.txt" && uf=1; grep -qiE '^root=[0-9a-f]{32}' "$RUNDIR/flags.txt" && rf=1; }
+[ -n "$(rc2_flag_value user "$RUNDIR")" ] && uf=1
+[ -n "$(rc2_flag_value root "$RUNDIR")" ] && rf=1
 if [ "$uf" = 1 ] && [ "$rf" = 1 ]; then outcome="solved"; elif [ "$uf" = 1 ] || [ "$rf" = 1 ]; then outcome="partial"; else outcome="failed"; fi
 
 # ── tool-call signals ────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ if have_jq && [ -f "$J" ]; then
   errors="$(jq -r 'select(.event=="post" and (.exit!=null) and (.exit!=0))|1' "$J" 2>/dev/null | wc -l | tr -d ' ')"
   timeouts="$(jq -r 'select(.event=="post" and (.exit==124))|1' "$J" 2>/dev/null | wc -l | tr -d ' ')"
   bigout="$(jq -r 'select(.event=="post" and (.out_bytes>20000))|1' "$J" 2>/dev/null | wc -l | tr -d ' ')"
-  first_ts="$(jq -r 'select(.event=="pre")|.ts' "$J" 2>/dev/null | head -1)"
+  first_ts="$(rc2_tl_first_ts "$J")"
   last_ts="$(jq -r '.ts' "$J" 2>/dev/null | tail -1)"
   repline="$(jq -r 'select(.event=="pre" and (.command!=null)) | (.command | gsub("[ \t\r\n]+";" ") | gsub("^ +| +$";""))' "$J" 2>/dev/null \
             | sort | uniq -c | sort -rn)"
@@ -133,7 +135,7 @@ EOF
 MD="$RUNDIR/failure_analysis.md"
 {
   echo "# failure analysis — $slug"
-  echo "_outcome **$outcome** · difficulty $diff · $steps steps · ${dur_min}m · $(date -u +%FT%TZ)_"
+  echo "_outcome **$outcome** · difficulty $diff · $steps steps · ${dur_min}m · $(rc2_utc)_"
   echo
   if [ "$outcome" = "solved" ]; then
     echo "✅ Solved — no failure classification."

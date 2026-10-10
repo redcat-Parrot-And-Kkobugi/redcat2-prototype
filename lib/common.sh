@@ -2,11 +2,30 @@
 # =============================================================================
 #  common.sh — shared helpers for redcat2 scripts + libs. Idempotent; source it:
 #      ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
-#  Provides: ANSI colors (g r y c d n), rc2_resolve_rundir, rc2_to_epoch.
+#  Provides: ANSI colors (g r y c d n), rc2_resolve_rundir, rc2_to_epoch, rc2_utc,
+#  and the flag helpers (RC2_FLAG_RE, rc2_flag_value, rc2_hex_in, rc2_both_flags).
 # =============================================================================
 
 # ANSI colors (plain; harmless when redirected)
 g=$'\033[32m'; r=$'\033[31m'; y=$'\033[33m'; c=$'\033[36m'; d=$'\033[2m'; n=$'\033[0m'
+
+# rc2_utc — one UTC timestamp format shared by journal / status / retrospectives
+rc2_utc() { date -u +%FT%TZ; }
+
+# ── flags (HTB flag = 32-hex) — the single source of flag parsing ──────────────
+RC2_FLAG_RE='[0-9a-fA-F]{32}'
+# rc2_flag_value <user|root> <rundir> — the captured hex from flags.txt, or empty.
+rc2_flag_value() {
+  local kind="$1" f="${2:-.}/flags.txt"
+  [ -f "$f" ] && grep -ioE "^${kind}=$RC2_FLAG_RE" "$f" 2>/dev/null | head -1 | cut -d= -f2
+}
+# rc2_hex_in <file> — first 32-hex token in a file (e.g. a captured user.txt/root.txt), or empty.
+rc2_hex_in() { grep -ioE "$RC2_FLAG_RE" "${1:-/dev/null}" 2>/dev/null | head -1; }
+# rc2_both_flags <rundir> — true iff both user+root are present in flags.txt.
+rc2_both_flags() {
+  local f="${1:-.}/flags.txt"
+  [ -f "$f" ] && grep -qiE "^user=$RC2_FLAG_RE" "$f" && grep -qiE "^root=$RC2_FLAG_RE" "$f"
+}
 
 # rc2_resolve_rundir <arg> — needs $ROOT. Echoes a run dir:
 #   a literal dir, else runs/<arg>, else the newest run. Empty output if none.

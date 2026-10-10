@@ -19,10 +19,5 @@ rc2_load_env() {
 
 _rc2_is_ip() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
 
-# ── flags ────────────────────────────────────────────────────────────────────
-RC2_FLAG_RE='[0-9a-f]{32}'                         # HTB flag = 32-hex
-# both user+root captured in <rundir>/flags.txt ?
-rc2_both_flags() {
-  local f="${1:-.}/flags.txt"
-  [ -f "$f" ] && grep -qiE "^user=$RC2_FLAG_RE" "$f" && grep -qiE "^root=$RC2_FLAG_RE" "$f"
-}
+# flag helpers (RC2_FLAG_RE, rc2_flag_value, rc2_hex_in, rc2_both_flags) live in common.sh,
+# which bootstrap.sh sources before this file — one source of flag parsing for libs and scripts.
