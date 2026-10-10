@@ -29,7 +29,7 @@ slug="$(basename "$RUNDIR")"
 have_jq() { command -v jq >/dev/null 2>&1; }
 
 diff="unknown"
-[ -f "$RUNDIR/target.env" ] && diff="$(. "$RUNDIR/target.env" 2>/dev/null; echo "${difficulty:-unknown}")"
+diff="$(rc2_load_target "$RUNDIR" 2>/dev/null; echo "${difficulty:-unknown}")"
 [ -n "$diff" ] || diff="unknown"
 
 # ── outcome from flags.txt ───────────────────────────────────────────────────

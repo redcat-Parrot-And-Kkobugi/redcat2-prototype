@@ -35,7 +35,7 @@ mkdir -p "$RUNDIR/logs"
 build_digest(){
   local tj="$RUNDIR/logs/tools.jsonl" elapsed="?" now; now=$(date +%s)
   [ -f "$RUNDIR/logs/meta.env" ] && { . "$RUNDIR/logs/meta.env" 2>/dev/null; [ -n "${start_epoch:-}" ] && elapsed="$(( (now-start_epoch)/60 ))m"; }
-  . "$RUNDIR/target.env" 2>/dev/null || true
+  rc2_load_target "$RUNDIR" 2>/dev/null || true
 
   [ -n "${OP_NOTE:-}" ] && { echo "## OPERATOR DIRECTIVE (human — HIGHEST priority). Relay to the solver and keep nudging (not on-track) until it actually follows this:"; echo "  $OP_NOTE"; echo; }
   echo "# HUNT DIGEST"

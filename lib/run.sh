@@ -138,12 +138,10 @@ rc2_write_status() {
   now="$(rc2_utc)"
   start="$( [ -f "$L/meta.env" ] && . "$L/meta.env" 2>/dev/null; echo "${start_epoch:-$(date +%s)}")"
   elapsed=$(( ($(date +%s) - start) / 60 ))
-  tb="$( [ -f "$rundir/target.env" ] && . "$rundir/target.env" 2>/dev/null; echo "${tmux_base:-rc2}")"
-  local mn ti os df
-  mn="$( . "$rundir/target.env" 2>/dev/null; echo "${machine_name:-?}")"
-  ti="$( . "$rundir/target.env" 2>/dev/null; echo "${target_ip:-?}")"
-  os="$( . "$rundir/target.env" 2>/dev/null; echo "${os_hint:-?}")"
-  df="$( . "$rundir/target.env" 2>/dev/null; echo "${difficulty:-?}")"
+  # one subshell source of target.env (no leak into the status-writer loop), fields tab-split out
+  local mn ti os df _t
+  _t="$( rc2_load_target "$rundir" 2>/dev/null; printf '%s\t%s\t%s\t%s\t%s' "${machine_name:-?}" "${target_ip:-?}" "${os_hint:-?}" "${difficulty:-?}" "${tmux_base:-rc2}" )"
+  IFS=$'\t' read -r mn ti os df tb <<<"$_t"
   {
     echo "# status — ${mn}"
     echo "_updated ${now} · elapsed ${elapsed}m · target ${ti} · os ${os} · diff ${df}_"

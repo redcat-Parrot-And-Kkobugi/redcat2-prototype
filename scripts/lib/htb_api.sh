@@ -33,6 +33,7 @@ htb_req() {
 }
 
 htb_machine_profile() { htb_req GET  "machine/profile/$1"; }          # $1 = name or id (v4)
+htb_name_to_id()      { case "$1" in ''|*[!0-9]*) htb_machine_profile "$1" 2>/dev/null | jq -r '.info.id // empty' 2>/dev/null ;; *) echo "$1" ;; esac; }  # name->id; a numeric id passes through
 # active machine is on v5 as virtual_machine/active (confirmed from app.hackthebox.com devtools HAR)
 htb_active()          { HTB_API_BASE="$HTB_API_BASE_V5" htb_req GET "virtual_machine/active"; }
 htb_spawn()           { htb_req POST "vm/spawn"     "{\"machine_id\": $1}"; }   # v4

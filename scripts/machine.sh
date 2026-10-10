@@ -19,7 +19,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
 : "${HTB_TOKEN:?set HTB_TOKEN in .env (drop a HAR in har/ and run ./hunt once, or set it directly)}"
 
 _prof(){ htb_machine_profile "$1" 2>/dev/null; }
-_id(){ case "$1" in ''|*[!0-9]*) _prof "$1" | jq -r '.info.id // empty' 2>/dev/null ;; *) echo "$1" ;; esac; }
+_id(){ htb_name_to_id "$1"; }   # name->id via the shared client helper
 _msg(){ jq -rc '.message // .status // .' 2>/dev/null; }
 
 cmd="${1:-}"; shift || true
