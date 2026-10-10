@@ -91,6 +91,16 @@ built, one proven rung at a time. Re-score the board.
   move, and what new information would revive it. Then switch to the next-ranked hypothesis.
 - Freezing is not failure — it is how you stay solvent. A frozen hypothesis can thaw the
   moment a later fact revives its preconditions.
+- **Classify *why* an attempt stopped — it decides the next move.** A reworded retry is
+  legitimate while the evidence budget holds; retrying a payload with a tweak is often how a
+  chain finally lands, so retries are allowed, not banned. When an attempt stops, tag it:
+  **done** (it produced its result), **exhausted** (budget/time ran out mid-attempt — *not*
+  permanently dead, re-angle it), or **blocked** (the tool/transport/environment failed so it
+  effectively never ran — a same-direction re-dispatch is safe once the cause is fixed). Only
+  when an attempt is judged **exhausted or blocked** do you stop rewording and instead
+  **re-establish a new mechanism or re-examine the current one** (a different gadget, encoding,
+  auth path, or assumption). That mechanism change — not one more reworded shot — is what moves
+  a stuck line forward or thaws a frozen one.
 - **Zoom-out trigger:** whenever you freeze a hypothesis, or every ~10 actions, re-read
   `worldmodel.md` top to bottom and ask: *what surface or fact am I not using? what would
   someone who just arrived look at first?* The answer is often a seam you walked past while
