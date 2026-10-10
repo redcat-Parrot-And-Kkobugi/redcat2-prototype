@@ -80,8 +80,12 @@ cleanup() {
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
-  # Solved only when BOTH flags present → tear down tmux. Otherwise preserve state for resume.
+  # Solved only when BOTH flags present → stop the HTB machine + tear down tmux. Otherwise preserve state for resume.
   if rc2_both_flags "$RUNDIR"; then
+    if [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ "${NO_STOP:-0}" != "1" ]; then
+      if htb_terminate "$machine_id" >/dev/null 2>&1; then echo "[hunt] HTB machine terminated (id $machine_id)."
+      else echo "[hunt] HTB terminate request sent (id $machine_id) — verify with scripts/machine.sh active."; fi
+    fi
     tmux ls -F '#{session_name}' 2>/dev/null | grep -E "^${tmux_base}(_|$)" | while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
     echo "[hunt] SOLVED — both flags captured. tmux torn down. Run dir: $RUNDIR"
   else
