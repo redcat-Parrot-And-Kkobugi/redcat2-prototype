@@ -7,7 +7,11 @@
 #  best-effort from the session log. Auto-run by hunt on exit; safe standalone.
 # =============================================================================
 set -uo pipefail
-RUNDIR="${1:?usage: report.sh <rundir>}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT/lib/common.sh"
+. "$ROOT/lib/tools_log.sh"
+RUNDIR="$(rc2_resolve_rundir "${1:?usage: report.sh <rundir|name|ip>}")"
+[ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "report: no run dir"; exit 0; }
 LOGS="$RUNDIR/logs"; J="$LOGS/tools.jsonl"
 # shellcheck source=/dev/null
 [ -f "$RUNDIR/target.env" ] && . "$RUNDIR/target.env"
@@ -18,15 +22,8 @@ now=$(date +%s); start="${start_epoch:-$now}"; wall=$(( now - start ))
 fmt(){ local s=$1; printf '%dh%02dm%02ds' $((s/3600)) $(((s%3600)/60)) $((s%60)); }
 
 # ── tool-call metrics ───────────────────────────────────────────────────────────
-calls=0 bash_calls=0 task_calls=0 dur_ms=0 first_ts="" last_ts=""
-if [ -s "$J" ]; then
-  calls=$(grep -c '"event":"post"' "$J" 2>/dev/null | head -1)
-  bash_calls=$(grep '"event":"post"' "$J" 2>/dev/null | grep -c '"tool":"Bash"' | head -1)
-  task_calls=$(grep '"event":"post"' "$J" 2>/dev/null | grep -c '"tool":"Task"' | head -1)
-  dur_ms=$(grep '"event":"post"' "$J" 2>/dev/null | jq -s 'map(.duration_ms // 0)|add // 0' 2>/dev/null | head -1)
-  first_ts=$(grep -m1 '"event":"pre"' "$J" 2>/dev/null | jq -r '.ts // empty' 2>/dev/null | head -1)
-  last_ts=$(grep '"event":"post"' "$J" 2>/dev/null | tail -1 | jq -r '.ts // empty' 2>/dev/null | head -1)
-fi
+calls=$(rc2_tl_count "$J"); bash_calls=$(rc2_tl_count "$J" Bash); task_calls=$(rc2_tl_count "$J" Task)
+dur_ms=$(rc2_tl_dur_ms "$J"); first_ts=$(rc2_tl_first_ts "$J"); last_ts=$(rc2_tl_last_ts "$J")
 calls=$(printf '%s' "${calls:-0}" | tr -dc '0-9'); calls=$((10#${calls:-0}))
 bash_calls=$(printf '%s' "${bash_calls:-0}" | tr -dc '0-9'); bash_calls=$((10#${bash_calls:-0}))
 task_calls=$(printf '%s' "${task_calls:-0}" | tr -dc '0-9'); task_calls=$((10#${task_calls:-0}))
@@ -100,8 +97,8 @@ EOF
 # Assembled with printf/sed (NOT an unquoted heredoc) so file content is never shell-evaluated.
 # Style: emoji banner by default (WRITEUP_EMOJI=1); set WRITEUP_EMOJI=0 for a plain ASCII fallback.
 WM="$RUNDIR/worldmodel.md"; JO="$RUNDIR/journal.md"
-uf="$(grep -ioE '^user=[0-9a-fA-F]{32}' "$RUNDIR/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
-rf="$(grep -ioE '^root=[0-9a-fA-F]{32}' "$RUNDIR/flags.txt" 2>/dev/null | head -1 | cut -d= -f2)"
+uf="$(rc2_flag_value user "$RUNDIR")"
+rf="$(rc2_flag_value root "$RUNDIR")"
 emoji="${WRITEUP_EMOJI:-1}"
 if [ "$emoji" = "1" ]; then fF='🏴 '; fM='🖥️'; fU='👤'; fR='🔑'; else fF=''; fM='•'; fU='•'; fR='•'; fi
 chain="$(awk -v e="$emoji" '

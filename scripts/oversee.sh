@@ -23,8 +23,8 @@ unset ANTHROPIC_API_KEY
 
 NAME="${1:?usage: oversee.sh <machine-name|run-slug> [\"operator directive\"]}"
 OP_NOTE="${2:-${OP_NOTE:-}}"
-RUNDIR="$ROOT/runs/$NAME"
-[ -d "$RUNDIR" ] || { echo "${r}no run dir: $RUNDIR${n} (start the hunt first)"; exit 1; }
+RUNDIR="$(rc2_resolve_rundir "$NAME")"
+[ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "${r}no run dir for '$NAME'${n} (start the hunt first)"; exit 1; }
 INTERVAL="${OVERSEE_INTERVAL:-600}"
 MODEL="${OVERSEE_MODEL:-opus}"
 SUP="$RUNDIR/supervisor.md"

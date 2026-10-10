@@ -69,7 +69,7 @@ MD
 MD
   [ -s "$RUNDIR/journal.md" ] || cat > "$RUNDIR/journal.md" <<MD
 # Journal — append-only decision trail
-$(date -u +%FT%TZ) START — target ${MACHINE_NAME:-$TARGET_IP} ($TARGET_IP). First pass: ORIENT says information is the bottleneck; open with full-surface enumeration.
+$(rc2_utc) START — target ${MACHINE_NAME:-$TARGET_IP} ($TARGET_IP). First pass: ORIENT says information is the bottleneck; open with full-surface enumeration.
 MD
   : > "$RUNDIR/flags.txt" 2>/dev/null || true
   echo "$RUNDIR"
@@ -135,7 +135,7 @@ rc2_run_loop() {
 rc2_write_status() {
   local rundir="$1" L="$1/logs" tb now start elapsed
   [ -d "$rundir" ] || return 0
-  now="$(date -u +%FT%TZ)"
+  now="$(rc2_utc)"
   start="$( [ -f "$L/meta.env" ] && . "$L/meta.env" 2>/dev/null; echo "${start_epoch:-$(date +%s)}")"
   elapsed=$(( ($(date +%s) - start) / 60 ))
   tb="$( [ -f "$rundir/target.env" ] && . "$rundir/target.env" 2>/dev/null; echo "${tmux_base:-rc2}")"
@@ -162,7 +162,7 @@ rc2_write_status() {
     echo "## journal (recent)"; tail -15 "$rundir/journal.md" 2>/dev/null | sed 's/^/  /'
     echo
     echo "## recent tool calls (last 15)"
-    [ -f "$L/tools.jsonl" ] && tail -40 "$L/tools.jsonl" | jq -r 'select(.event=="post") | "- [\(.ts)] \(.tool) \((.command // "")[0:100]) (\(.out_bytes)B)"' 2>/dev/null | tail -15
+    rc2_tl_recent "$L/tools.jsonl" 15
     echo
     echo "## tmux sessions"
     tmux ls -F '#{session_name}  (#{session_windows}w)' 2>/dev/null | grep -E "^${tb}" | sed 's/^/- /' || echo "- (none)"
