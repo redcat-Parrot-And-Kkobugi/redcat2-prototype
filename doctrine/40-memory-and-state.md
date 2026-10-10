@@ -19,12 +19,15 @@ reason from. Structure it so the top is the most load-bearing:
 ## Access held        <- shells/creds you currently possess, as which principal, on which host
 ## Credentials        <- user:pass / hashes / keys / tokens, and what each unlocks (verified?)
 ## Services & versions <- port -> service/version, with the one fact that matters per service
-## Hosts & topology    <- the target, any pivots, trust relationships
+## Hosts & topology    <- the target, any pivots, trust relationships; tag each host's scope (in-scope | conditional | pending | out-of-scope, per 00-prime-directive)
 ## Notable files/config<- paths, configs, source snippets that matter
 ## Open questions      <- known unknowns worth resolving
 ```
 Promote a fact here **only after VERIFY**. If it was a guess, it goes in `hypotheses.md`,
-not here.
+not here. Tag each fact's basis — `observed` (you saw it happen or read it directly) vs
+`inferred` (deduced from other facts, e.g. "JDK ≥11 because the CORBA class is absent") — so a
+fresh instance knows at a glance what rests on direct evidence and what rests on a chain that a
+later fact could break.
 
 ### `hypotheses.md` — what MIGHT break it
 The ranked attack board. One block per hypothesis:

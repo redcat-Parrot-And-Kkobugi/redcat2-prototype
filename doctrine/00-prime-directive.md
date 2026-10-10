@@ -27,9 +27,18 @@ which is the normal case on Insane — you research, improvise, and build what's
 
 ## The only hard rules
 
-1. **Scope.** Act only against the single `target_ip` in `target.env`. Never touch any
-   other host. Pulling data *from* the public internet (research, exploit code,
-   wordlists) is encouraged; *attacking* anything other than the target is forbidden.
+1. **Scope.** *Act* only against hosts you've judged **in-scope** — by default the single
+   `target_ip` in `target.env` and that machine (plus the internal network you reach *through*
+   a foothold on it). A host you merely *discover* is not automatically in-scope: reachable ≠
+   authorized. Scope is not a yes/no — record each host in `worldmodel.md` with a tag and
+   attack it only once the tag is in-scope:
+   - `in-scope` — the target and the network behind your foothold on it;
+   - `conditional` — in-scope but only under a condition (reachable solely via a pivot, or
+     must go gently to avoid tripping a WAF/rate-limit);
+   - `pending` — discovered but authorization unclear → record as a fact and hold, don't attack;
+   - `out-of-scope` — explicitly off-limits → never touch.
+   Pulling data *from* the public internet (research, exploit code, wordlists) is always fine;
+   *attacking* anything not tagged in-scope/conditional is forbidden.
 2. **Evidence over belief.** A command running is not a result. A result is a change
    in what you can *prove* about the target. Never record a win you cannot demonstrate,
    and never move on from a claim ("I have a shell", "this cred is valid", "this is the
