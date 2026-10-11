@@ -96,6 +96,7 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `NO_RESTART` | 0 | `1` = run the agent once, no auto-relaunch |
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
 | `NO_STOP` | 0 | `1` = on solve, don't terminate the HTB machine (keep the box up) |
+| `VPN_AUTOFIX` | 0 | `1` = if pre-flight finds the wrong VPN server (HTB_OVPN mismatch, or target routes but is host-unreachable), auto-reconnect to `HTB_OVPN` |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
@@ -326,6 +327,7 @@ drive the real service with the exploit `exploit-dev` builds.
 | name target rejected / token dead | drop a fresh HAR in `HAR_SRC`; `./hunt` re-imports, or run `tools/env-setting/check_token.sh` |
 | no IP after spawn | box still booting; it waits 15×3 min=45 min, then set `target_ip` in `runs/<slug>/target.env` and re-run |
 | no route to target | set `HTB_OVPN` in `.env`, or `sudo openvpn <file> &` |
+| target routes but unreachable (gateway says host-unreachable) | wrong VPN server/region — the machine lives on another server; connect the `.ovpn` where it's spawned (your HTB panel), or `VPN_AUTOFIX=1 ./hunt …` with `HTB_OVPN` set. Pre-flight now warns on this |
 | agent keeps restarting | it's crashing/overflowing; check `logs/session_*.log`; `NO_RESTART=1` to stop the loop |
 | supervisor burning tokens | `NO_OVERSEE=1 ./hunt …` or raise `OVERSEE_INTERVAL` |
 | Burp tools missing | `scripts/burp.sh up` before `./hunt`; needs `BURP_MCP_TOKEN` |
