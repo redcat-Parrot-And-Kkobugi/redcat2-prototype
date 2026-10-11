@@ -40,6 +40,8 @@ The launcher. Runs one autonomous hunt (headless Claude Code) against a target u
 | `NO_RESTART` | 0 | `1` = run the agent exactly once |
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
 | `NO_STOP` | 0 | `1` = on solve, keep the HTB machine up (default: terminate it) |
+| `VPN_AUTOFIX` | 0 | `1` = if pre-flight finds the wrong VPN server (HTB_OVPN mismatch, or target routes but host-unreachable), auto-reconnect to `HTB_OVPN` |
+| `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `IP_WAIT_TRIES` | 15 | spawn/IP poll attempts |
@@ -73,20 +75,25 @@ scripts/watch.sh [<name|ip|rundir>]
 
 | env | default | effect |
 |---|---|---|
+| `REPLAY` | 0 | `1` = replay the run's full history first; default is LIVE from now |
 | `FULL` | 0 | `1` = print each tool's whole output (default: last `MAX` lines) |
 | `MAX` | 200 | lines of output shown per tool call |
 | `NOCONV` | 0 | `1` = tool feed only, suppress the reasoning stream |
 
 ```bash
-scripts/watch.sh                 # newest run
+scripts/watch.sh                 # newest run — live from now
 scripts/watch.sh Management      # by name / slug
+REPLAY=1 scripts/watch.sh        # replay full history, then live
 FULL=1 scripts/watch.sh          # complete outputs
 NOCONV=1 scripts/watch.sh        # just the tool calls
 ```
 
-Reads `logs/conv.jsonl` (reasoning, via `conv_fmt.py`) + `logs/tools.jsonl` (tool calls). Needs
-`python3` for the reasoning stream; without it you get the tool feed only. Live progress bars
-(nmap/hashcat/ffuf) render only in the hunt's tmux session — `tmux attach -t rc2_<slug>_main`.
+By default it shows only activity from the moment you attach (it does **not** dump the run's whole
+accumulated log). Ctrl-C stops it cleanly — the conv renderer runs in its own process group, so no
+orphaned `tail`/`python3` keeps printing. Reads `logs/conv.jsonl` (reasoning, via `conv_fmt.py`) +
+`logs/tools.jsonl` (tool calls). Needs `python3` for the reasoning stream; without it you get the
+tool feed only. Live progress bars (nmap/hashcat/ffuf) render only in the hunt's tmux session —
+`tmux attach -t rc2_<slug>_main`.
 
 ---
 
@@ -97,43 +104,52 @@ advice only when it sees drift. The solver follows a newer verdict. `hunt` auto-
 second by hand to inject an operator directive.
 
 ```
-scripts/oversee.sh <name|slug> ["operator directive"]
+scripts/oversee.sh [-s|--slug <name>] [-m|--model <model>] [-d|--directive <text>] [-i|--interval <sec>] [--oneshot] [<slug> [directive]]
 ```
 
-| env | default | effect |
+Flags set each part individually; positional `<slug> [directive]` still works (back-compat, and
+how `hunt` auto-starts it). Precedence: flag > env > default. **Omit the slug and it uses the newest
+run** (so `-d "…"` alone works); extra positional args warn (pass model/directive as `-m`/`-d`).
+
+| flag / env | default | effect |
 |---|---|---|
-| `OVERSEE_INTERVAL` | 600 | review cadence (s) |
-| `OVERSEE_MODEL` | opus | reviewer model |
-| `ONESHOT` | 0 | `1` = one assessment then exit |
-| `OP_NOTE` | — | operator directive (alt to the positional arg) |
+| `-s\|--slug` | newest run | which run to supervise (name/slug/ip via `rc2_resolve_rundir`) |
+| `-m\|--model` / `OVERSEE_MODEL` | opus | reviewer model |
+| `-d\|--directive` / `OP_NOTE` | — | operator directive relayed to the solver |
+| `-i\|--interval` / `OVERSEE_INTERVAL` | 600 | review cadence (s) |
+| `--oneshot` / `ONESHOT=1` | — | one assessment then exit |
 
 ```bash
-scripts/oversee.sh Management
-scripts/oversee.sh Management "focus the SSTI on /render, not the login"
-OVERSEE_INTERVAL=300 scripts/oversee.sh Management
-ONESHOT=1 scripts/oversee.sh Management
+scripts/oversee.sh -s Management -m opus -d "this challenge is using aws"
+scripts/oversee.sh Management "focus the SSTI on /render, not the login"   # positional back-compat
+scripts/oversee.sh -d "check for an IDOR on /api/users"                    # newest run
+OVERSEE_INTERVAL=300 scripts/oversee.sh -s Management
 ```
 
 Writes `runs/<slug>/supervisor.md` (latest verdict) + `logs/supervisor.jsonl` (history). Never
-touches the target. **Pass the run slug exactly** — it resolves `runs/<slug>` directly (with the
-case-preserving slug, use the real machine name, e.g. `Management`).
+touches the target.
 
 ---
 
 ## `report.sh`
 
-Retrospective metrics → injected into `writeup.md`: wall time, tool/Task counts, per-phase
-breakdown, best-effort token/cost. Auto-run by `hunt` on exit; safe to run standalone.
+Builds `writeup.md` and is auto-run by `hunt` on exit (safe standalone). Two parts, each refreshed
+between its own markers:
+- **Narrative** (`<!-- WRITEUP -->`) assembled from the run's living files: an emoji banner with the
+  flags, a **Solve chain** from `journal.md` milestones, **Verified facts** from `worldmodel.md`, and
+  a tools/exploits list. `WRITEUP_EMOJI=0` for a plain ASCII banner. Any curated prose you put ABOVE
+  the block is preserved.
+- **Metrics** (`<!-- METRICS -->`): wall time, tool/Task counts, per-phase breakdown, best-effort
+  token/cost. Deterministic over `logs/tools.jsonl` + `logs/phases.log`.
 
 ```
-scripts/report.sh <rundir>
+scripts/report.sh <rundir|name|ip>      # resolves via rc2_resolve_rundir (newest if omitted)
 ```
 
 ```bash
-scripts/report.sh runs/Management
+scripts/report.sh Management
+WRITEUP_EMOJI=0 scripts/report.sh Management   # ASCII banner instead of emoji
 ```
-
-Deterministic over `logs/tools.jsonl` + `logs/phases.log`.
 
 ---
 
@@ -170,7 +186,7 @@ scripts/rag.sh [-p] <query...>
 
 | flag / env | effect |
 |---|---|
-| `-p` | also search shared refs (PayloadsAllTheThings, GTFOBins) |
+| `-p` | also search `reference/` (surface-signals) + shared refs (PayloadsAllTheThings, GTFOBins) |
 | `SCOPE=runs/<slug>` | restrict the search to one run dir |
 
 ```bash
@@ -367,8 +383,9 @@ Loaded by `lib/bootstrap.sh`; edit the function, not the launcher.
 | file | provides |
 |---|---|
 | `lib/bootstrap.sh` | library loader; sets `$RC2_ROOT`, sources the rest |
-| `lib/common.sh` | ANSI colors, `rc2_resolve_rundir`, `rc2_to_epoch` |
-| `lib/env.sh` | `.env` loading, SecLists, flag helpers |
+| `lib/common.sh` | ANSI colors, `rc2_resolve_rundir`, `rc2_to_epoch`, `rc2_utc`, `rc2_load_target`, and the flag helpers (`RC2_FLAG_RE`, `rc2_flag_value`, `rc2_hex_in`, `rc2_both_flags`) |
+| `lib/tools_log.sh` | shared `logs/tools.jsonl` readers (`rc2_tl_posts`/`_count`/`_first_ts`/`_last_ts`/`_dur_ms`/`_recent`) used by report/analyze/status/flag-scan |
+| `lib/env.sh` | `.env` loading, SecLists (flag helpers now live in `common.sh`) |
 | `lib/htb.sh` | token refresh, machine resolve/spawn, VPN pre-flight, and `rc2_flag_watcher` — auto-submits user/root flags via two channels (`flags.txt` + enforced scan of logged `user.txt`/`root.txt` reads), persistent dedup in `logs/.submitted`, retry on auth-rejected submit |
 | `lib/run.sh` | run-dir scaffold (the case-preserving slug), prompt assembly, resilient run loop, status writer, oversee launch |
 | `lib/hook_log.sh` | per-run PreToolUse/PostToolUse hook: force-logs every call to `logs/tools.jsonl` + `logs/raw/`, and blocks (exit 2) identical-command/identical-result repeats (anti-stuck/throttle/DoS) |

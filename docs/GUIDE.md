@@ -208,7 +208,7 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `scripts/oversee.sh` | `scripts/oversee.sh <slug> ["directive"]` | supervisor/critic loop → `supervisor.md` on drift. `OVERSEE_INTERVAL`, `OVERSEE_MODEL`, `ONESHOT=1`. Auto-started by `hunt` |
 | `scripts/report.sh` | `scripts/report.sh <rundir>` | metrics → `writeup.md` (wall time, tool/Task counts, per-phase). Auto on exit |
 | `scripts/analyze_run.sh` | `scripts/analyze_run.sh [rundir|name]` | failure classifier → `failure_analysis.md/.json`. Auto on exit |
-| `scripts/rag.sh` | `scripts/rag.sh [-p] <query>` | cross-run memory: grep your own past runs. `-p` also searches PayloadsAllTheThings/GTFOBins. `SCOPE=runs/<slug>` to narrow |
+| `scripts/rag.sh` | `scripts/rag.sh [-p] <query>` | cross-run memory: grep your own past runs. `-p` also searches `reference/` + PayloadsAllTheThings/GTFOBins. `SCOPE=runs/<slug>` to narrow |
 | `scripts/machine.sh` | `scripts/machine.sh <cmd> <name|id> [flag]` | HTB API util: `info` / `ip` / `spawn` / `active` / `stop` / `reset` / `submit`. Names resolve to ids |
 | `scripts/burp.sh` | `scripts/burp.sh up|status|down|restart` | optional Burp headless over MCP; registers `mcp__burp__*`. Needs `BURP_MCP_TOKEN` |
 | `scripts/install_tools.sh` | `scripts/install_tools.sh [core|max|--check]` | install the Kali toolset |
@@ -218,10 +218,11 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `tools/env-setting/set_token_from_har.sh` | `… <file.har>` | extract + verify the labs token from a HAR → `.env` |
 | `tools/env-setting/check_token.sh` | `…` | validate the current token/env against the live API |
 
-Library (sourced, not run directly): `lib/bootstrap.sh` (loader), `lib/common.sh` (colors,
-run-dir resolve, time), `lib/env.sh` (.env, flags), `lib/htb.sh` (token/resolve/spawn/VPN/
-watcher), `lib/run.sh` (scaffold, prompts, run loop, status writer, oversee launch),
-`lib/hook_log.sh` (per-tool-call logging hook + anti-DoS repeat guard).
+Library (sourced, not run directly): `lib/bootstrap.sh` (loader; chain: common → tools_log → env →
+htb → run), `lib/common.sh` (colors, run-dir resolve, UTC time, flag + target.env helpers),
+`lib/tools_log.sh` (shared `logs/tools.jsonl` readers, `rc2_tl_*`), `lib/env.sh` (.env, SecLists),
+`lib/htb.sh` (token/resolve/spawn/VPN pre-flight/flag watcher), `lib/run.sh` (scaffold, prompts, run
+loop, status writer, oversee launch), `lib/hook_log.sh` (per-tool-call logging hook + anti-DoS repeat guard).
 
 **Full per-tool usage** — every flag, env knob, and example for the above — is in
 [`docs/TOOLS.md`](TOOLS.md). This table is the index; that file is the reference.
@@ -274,7 +275,9 @@ drive the real service with the exploit `exploit-dev` builds.
   three living files. The disk is the memory.
 - **Auto-relaunch:** within a run, a crash or context overflow (non-zero exit) relaunches a fresh
   headless agent that resumes from disk, up to `MAX_RESTARTS` (default 20). A clean exit (flags, or
-  a written blocker) is respected and not relaunched. `NO_RESTART=1` runs once.
+  a written blocker) is respected and not relaunched. `NO_RESTART=1` runs once. Each relaunch prints
+  the target line and, if the box was respawned to a new IP, refreshes it from the HTB API (updating
+  `target.env`).
 - **Fresh:** `./hunt --fresh <target>` archives the old run to `runs/<slug>.bak.<epoch>` and starts
   clean.
 
@@ -283,8 +286,10 @@ drive the real service with the exploit `exploit-dev` builds.
 ## 11. Observability
 
 - **Live feed:** `scripts/watch.sh` (second terminal) — reasoning + every command and result.
-  The main `./hunt` terminal stays quiet: it shows only launch chrome (token/htb/vpn/oversee/
-  banner) and the exit summary (report/analyze/stopped). The agent conversation goes to
+  By default it shows activity **from the moment you attach** (not the whole backlog); `REPLAY=1`
+  replays the run's full history first. Ctrl-C stops it cleanly (its conv renderer runs in its own
+  process group). The main `./hunt` terminal stays quiet: it shows only launch chrome (token/htb/vpn/
+  oversee/banner) and the exit summary (report/analyze/stopped). The agent conversation goes to
   `logs/conv.jsonl` (rendered live by `watch.sh`) and `logs/session_*.log`, not your terminal.
 - **Supervisor:** `oversee.sh` (auto) writes `supervisor.md` only when it sees drift; the solver
   follows a newer `SUPERVISOR_TICK`. Pass an operator directive: `scripts/oversee.sh <slug> "…"`.
@@ -359,7 +364,8 @@ redcat2/
   doctrine/00..60           the brain (system prompt)
   .claude/agents/           researcher recon-analyst exploit-dev verifier reverser
   .claude/settings.local.json   personal auto-PR Stop hook       (gitignored)
-  lib/                      bootstrap common env htb run hook_log
+  lib/                      bootstrap common tools_log env htb run hook_log
+  reference/surface-signals.md  observation→environment→direction (consulted when ports are thin)
   scripts/                  watch oversee report analyze_run rag machine burp install_tools conv_fmt auto_pr
   scripts/lib/htb_api.sh    HTB API client
   tools/env-setting/        set_token_from_har check_token
