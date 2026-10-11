@@ -164,14 +164,67 @@ rc2_resolve_target() {
 }
 
 # Best-effort VPN routing to the target (non-fatal). Needs $RUNDIR for the log path.
+# --- VPN pre-flight helpers --------------------------------------------------
+# _rc2_vpn_running_cfg — the --config path of the running openvpn (first found), via /proc so no
+# pkill-style pattern can match this shell; empty if none is running.
+_rc2_vpn_running_cfg() {
+  local pid cfg
+  for pid in $(pgrep -x openvpn 2>/dev/null); do
+    cfg="$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | awk 'take{print; exit} $0=="--config"{take=1}')"
+    [ -n "$cfg" ] && { printf '%s\n' "$cfg"; return 0; }
+  done
+  return 1
+}
+# _rc2_target_reachable <ip> — classify a ROUTED target: ok | wrong-server | unknown.
+# "wrong-server" = gateway returns ICMP host-unreachable (the host isn't on this VPN's segment);
+# "unknown" = silent timeout (may just be booting, or ICMP-filtered-but-up); "ok" = replies.
+_rc2_target_reachable() {
+  local out; out="$(ping -c2 -W2 "$1" 2>&1)"
+  printf '%s' "$out" | grep -qiE 'bytes from'  && { echo ok;           return; }
+  printf '%s' "$out" | grep -qiE 'unreachable' && { echo wrong-server; return; }
+  echo unknown
+}
+# _rc2_vpn_swap <ovpn> <sudo_a> <ip> — tear down any openvpn and connect <ovpn> (VPN_AUTOFIX path).
+_rc2_vpn_swap() {
+  local ovpn="$1" sudo_a="$2" ip="$3" p i
+  echo "[vpn] VPN_AUTOFIX=1 → reconnecting to $(basename "$ovpn")"
+  for p in $(pgrep -x openvpn 2>/dev/null); do $sudo_a kill "$p" 2>/dev/null; done
+  sleep 3
+  $sudo_a openvpn --daemon --config "$ovpn" --log "$RUNDIR/logs/openvpn.log" 2>/dev/null || true
+  for i in $(seq 1 20); do sleep 1; ip route get "$ip" 2>/dev/null | grep -qE 'dev (tun|tap|ovpn)' && break; done
+}
+
 rc2_ensure_vpn() {
   local ip="$1" sudo_a="$2"
-  ip route get "$ip" 2>/dev/null | grep -qE 'dev (tun|tap|ovpn)' && { echo "[vpn] $ip routed via tunnel"; return 0; }
   local ovpn="${HTB_OVPN:-}"; ovpn="${ovpn/#\~/$HOME}"
+
+  # (A) config-mismatch: a DIFFERENT openvpn is running than HTB_OVPN → wrong server. Warn (opt-in autofix).
+  if [ -n "$ovpn" ]; then
+    local running; running="$(_rc2_vpn_running_cfg || true)"
+    if [ -n "$running" ] && [ "$(basename "$running")" != "$(basename "$ovpn")" ]; then
+      echo "${y:-}[vpn] WARNING: openvpn is running '$(basename "$running")' but HTB_OVPN='$(basename "$ovpn")' — likely the WRONG server; the target lives on the HTB_OVPN server. (VPN_AUTOFIX=1 to auto-reconnect.)${n:-}"
+      [ "${VPN_AUTOFIX:-0}" = "1" ] && [ -f "$ovpn" ] && _rc2_vpn_swap "$ovpn" "$sudo_a" "$ip"
+    fi
+  fi
+
+  # (B) route present?
+  if ip route get "$ip" 2>/dev/null | grep -qE 'dev (tun|tap|ovpn)'; then
+    echo "[vpn] $ip routed via tunnel"
+    # (C) routed ≠ reachable — actually probe the target (this is what catches the wrong-server case)
+    case "$(_rc2_target_reachable "$ip")" in
+      ok)           echo "[vpn] $ip reachable ✓" ;;
+      wrong-server) echo "${r:-}[vpn] WARNING: $ip routes via the tunnel but the gateway returns host-unreachable — you are almost certainly on the WRONG VPN server/region (the machine lives elsewhere). Check your .ovpn / HTB panel; set VPN_AUTOFIX=1 (with HTB_OVPN) to auto-reconnect.${n:-}"
+                    if [ "${VPN_AUTOFIX:-0}" = "1" ] && [ -f "$ovpn" ]; then _rc2_vpn_swap "$ovpn" "$sudo_a" "$ip"; echo "[vpn] after autofix: $(_rc2_target_reachable "$ip")"; fi ;;
+      unknown)      echo "[vpn] $ip not answering yet (may be booting; if it persists you may be on the wrong VPN server)" ;;
+    esac
+    return 0
+  fi
+
+  # (D) no route → connect HTB_OVPN (as before)
   if [ -n "$ovpn" ] && [ -f "$ovpn" ]; then
     echo "[vpn] connecting: $ovpn"
     $sudo_a openvpn --daemon --config "$ovpn" --log "$RUNDIR/logs/openvpn.log" 2>/dev/null || true
-    local i; for i in $(seq 1 20); do sleep 1; ip route get "$ip" 2>/dev/null | grep -qE 'dev (tun|tap|ovpn)' && { echo "[vpn] tunnel up"; return 0; }; done
+    local i; for i in $(seq 1 20); do sleep 1; ip route get "$ip" 2>/dev/null | grep -qE 'dev (tun|tap|ovpn)' && { echo "[vpn] tunnel up"; echo "[vpn] $ip: $(_rc2_target_reachable "$ip")"; return 0; }; done
     echo "[vpn] started but no route yet — see $RUNDIR/logs/openvpn.log (a LAN target may not need VPN)"
   else
     echo "[vpn] no route and HTB_OVPN unset — connect manually if the target needs a tunnel: sudo openvpn <file> &"
