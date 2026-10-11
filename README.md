@@ -21,8 +21,8 @@ tmux/herdr, reversing, resume, observability, security, and troubleshooting.
 
 ```bash
 cp .env.example .env            # fill CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)
-./hunt Blizzard                 # HTB name -> API resolves/spawns; opus orchestrator
-./hunt 10.10.11.42 opus "notes" # raw IP (IP-only mode if no HTB token)
+./hunt Blizzard                 # HTB name -> API resolves/spawns; Opus 4.8 orchestrator (default)
+./hunt 10.10.11.42 opus "notes" # raw IP (IP-only mode if no HTB token); 2nd arg overrides the model
 ```
 
 **HTB token is hands-off.** Save a devtools HAR from a logged-in `app.hackthebox.com`
@@ -46,11 +46,16 @@ to run once).
 **Watch it live** (second terminal) — the agent's reasoning plus every command and result:
 
 ```bash
-scripts/watch.sh                 # newest run   (FULL=1 for whole outputs, NOCONV=1 tool-feed only)
+scripts/watch.sh                 # newest run — LIVE from now (REPLAY=1 to replay full history)
 ```
 
+(`FULL=1` whole outputs, `NOCONV=1` tool-feed only. Ctrl-C stops it cleanly.)
+
 **VPN** is handled for you: if the target isn't already routed, `./hunt` brings the HTB tunnel
-up as an `openvpn --daemon` (logged to the run dir) and leaves it up across hunts.
+up as an `openvpn --daemon` (logged to the run dir) and leaves it up across hunts. Pre-flight also
+**checks you're on the right server** — it warns if a running VPN config differs from `HTB_OVPN`, or
+if the target routes but the gateway says host-unreachable (you're on the wrong VPN server/region);
+`VPN_AUTOFIX=1` reconnects to `HTB_OVPN` automatically.
 
 **Optional Burp** for web-heavy boxes — bring it up first and `./hunt` inherits `mcp__burp__*`:
 
@@ -108,25 +113,29 @@ redcat2/
     verifier.md (opus)      reverser.md (opus)
   lib/
     bootstrap.sh             thin loader: sets RC2_ROOT, sources the libs below
-    common.sh                colors, run-dir resolve, timestamp->epoch
-    env.sh                   .env loading, SecLists, flag helpers
-    htb.sh                   token refresh, machine resolve/spawn, VPN, flag watcher
+    common.sh                colors, run-dir resolve, UTC time, flag + target.env helpers
+    tools_log.sh             shared logs/tools.jsonl readers (rc2_tl_*)
+    env.sh                   .env loading, SecLists
+    htb.sh                   token refresh, machine resolve/spawn, VPN pre-flight, flag watcher
     run.sh                   run-dir scaffold, prompt assembly, resilient run loop
     hook_log.sh              force-log every tool call + result; anti-DoS repeat guard
   scripts/
     watch.sh                 live run viewer (reasoning + every tool call/result)
     oversee.sh               supervisor/critic loop -> writes supervisor.md (2nd terminal)
-    report.sh                run metrics -> writeup.md         (auto on exit)
+    report.sh                writeup.md: narrative (banner+chain+facts) + metrics   (auto on exit)
     analyze_run.sh           failure classifier -> failure_analysis.md/.json  (auto on exit)
-    rag.sh                   cross-run memory: grep your own past runs
+    rag.sh                   cross-run memory: grep your own past runs (+ reference/)
     machine.sh               HTB API util: info|ip|spawn|active|stop|reset|submit <name>
     burp.sh                  optional Burp-over-MCP (up|status|down|restart)
     install_tools.sh         one-shot Kali toolset install (core|max|--check)
     conv_fmt.py              stream-json -> readable transcript
-    lib/htb_api.sh           HTB API client (resolve/spawn/submit)
+    auto_pr.sh               optional dev Stop-hook: branch->PR->merge (personal, gitignored)
+    lib/htb_api.sh           HTB API client (resolve/spawn/submit, name->id)
   tools/env-setting/
     set_token_from_har.sh    HAR -> aud:6 labs token -> .env
     check_token.sh           validate the token against the live API
+  reference/
+    surface-signals.md       observation->environment->direction; consulted when ports are thin (not a playbook)
   har/                       drop HTB devtools HARs here        (gitignored)
   runs/<slug>/               per-box workspace, created at run   (gitignored)
 ```
@@ -140,7 +149,7 @@ runs/<slug>/
   hypotheses.md              ranked attack board (per-hypothesis evidence budgets)
   journal.md                 append-only decision trail
   flags.txt                  user=<hex> / root=<hex>  (auto-submitted)
-  writeup.md                 metrics (report.sh)   failure_analysis.md/.json (analyze_run.sh)
+  writeup.md                 narrative + metrics (report.sh)   failure_analysis.md/.json (analyze_run.sh)
   supervisor.md              reviewer verdicts, if oversee.sh is running (solver follows it)
   status.md                  auto snapshot of the current situation, refreshed every ~10 min
   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/   raw evidence
@@ -198,7 +207,8 @@ are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the
 - **Cross-run memory** (`scripts/rag.sh <query>`) — greps the agent's own past runs
   (journals, world models, hypotheses, writeups, failure analyses) so a service, version, error,
   or technique it met before has a recalled answer. Doctrine `20` tells the agent to check it
-  before researching live. `-p` also searches the shared PayloadsAllTheThings / GTFOBins refs.
+  before researching live. `-p` also searches `reference/` (surface-signals) and the shared
+  PayloadsAllTheThings / GTFOBins refs.
 - **Periodic status** — a background snapshotter rewrites `status.md` every ~10 min
   (`STATUS_INTERVAL`) with the current flags, phase, hypothesis counts, recent journal lines,
   recent tool calls, tmux sessions, and artifact counts. Operator view + resume aid; the agent's
@@ -212,6 +222,6 @@ are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the
 Scaffold complete and syntax-checked: the hunt loop + doctrine, multi-model sub-agents, HAR token
 automation, restart loop, live viewer (`watch.sh`), optional Burp (`burp.sh`), reversing doctrine
 + `reverser`, the supervisor (`oversee.sh`), retrospectives (`report.sh`/`analyze_run.sh`), and
-cross-run memory (`rag.sh`). All helper scripts functionally tested on seeded runs. Not yet run
-end to end against a live box — the first real hunt is the acceptance test. Expect to tune doctrine
-wording and sub-agent model assignments after watching one run.
+cross-run memory (`rag.sh`). Helper scripts functionally tested on seeded runs, and the loop has
+run against live HTB boxes (at least one solved end to end, user+root). Doctrine wording and
+sub-agent model assignments are still being tuned from run retrospectives.

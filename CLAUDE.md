@@ -37,7 +37,7 @@ run dir, whose three living-memory files carry all state. The disk *is* the memo
 relaunched. `NO_RESTART=1` runs exactly once. Watch any run live with `scripts/watch.sh`
 (reasoning from `conv.jsonl` + every tool call/result from `tools.jsonl`).
 
-`./hunt` (plumbing in `lib/`, loaded via `lib/bootstrap.sh` → `common/env/htb/run.sh`) loads
+`./hunt` (plumbing in `lib/`, loaded via `lib/bootstrap.sh` → `common/tools_log/env/htb/run.sh`) loads
 env, **refreshes the HTB token when stale** (`rc2_ensure_htb_token`: `rc2_import_har` copies
 the newest `*.har` from `$HAR_SRC` — default the Windows DevTools folder — into `har/`, then
 the bundled extractor writes a verified token to `.env`), resolves/spawns the box via the HTB
@@ -50,9 +50,12 @@ concatenating `doctrine/*.md`, then launches `claude -p` with `--dangerously-ski
 its full result independent of model behavior, and blocks (exit 2) identical-command/identical-result
 repeats to guard the target against a stuck/throttle/DoS loop; a background watcher auto-submits
 captured flags. The whole
-HAR → token → resolve/spawn → submit pipeline is hands-off and model-independent. On exit `hunt` runs `report.sh` (metrics → `writeup.md`) and
-`analyze_run.sh` (failure classification → `failure_analysis.md/.json`). Optionally run
-`scripts/oversee.sh <slug>` in a second terminal for a long-horizon supervisor.
+HAR → token → resolve/spawn → submit pipeline is hands-off and model-independent. The default
+orchestrator model is **Opus 4.8** (`claude-opus-4-8`); pass a 2nd arg to override. On exit `hunt`
+runs `report.sh` (writeup narrative + metrics → `writeup.md`) and `analyze_run.sh` (failure
+classification → `failure_analysis.md/.json`); on a **solve** it also **terminates the HTB machine**
+(unless `NO_STOP=1`) and tears down the run's tmux. Optionally run `scripts/oversee.sh <slug>` in a
+second terminal for a long-horizon supervisor.
 
 ## Architecture (the big picture)
 
@@ -141,7 +144,9 @@ the zero-dependency default for everything else.
   `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
   `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `install_tools.sh`
-  (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer).
+  (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer); `auto_pr.sh` (optional dev-workflow
+  Stop hook — branch→PR→merge, wired from a personal gitignored `.claude/settings.local.json`; not
+  part of a hunt). `lib/tools_log.sh` holds the shared `logs/tools.jsonl` readers.
 - **Live state.** `hunt` runs two background loops: `rc2_flag_watcher` (auto-submits user/root flags
   via the HTB API through two channels — `flags.txt` and an enforced scan of logged `user.txt`/
   `root.txt` reads — with persistent dedup in `logs/.submitted` and retry on an auth-rejected submit) and
