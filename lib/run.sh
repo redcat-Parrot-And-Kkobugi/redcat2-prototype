@@ -17,6 +17,8 @@ rc2_scaffold() {
   mkdir -p "$RUNDIR"/{tmp,recon,enum,loot/{hashes,keys,tickets,files},exploit,tools,bin,research,reversing,notes,logs/raw,tmp,.claude}
   # agents available to `claude -p` (cwd = run dir): symlink the team in.
   [ -e "$RUNDIR/.claude/agents" ] || ln -s "$RC2_ROOT/.claude/agents" "$RUNDIR/.claude/agents" 2>/dev/null || true
+  # repo tools reachable from the run dir without cd (doctrine prefers absolute paths; this is the convenience fallback)
+  [ -e "$RUNDIR/scripts" ] || ln -s "$RC2_ROOT/scripts" "$RUNDIR/scripts" 2>/dev/null || true
   # per-run hook registration (force-log every tool call + target-safety guard)
   local hook="$RC2_ROOT/lib/hook_log.sh"
   [ -s "$RUNDIR/.claude/settings.json" ] || cat > "$RUNDIR/.claude/settings.json" <<JSON
