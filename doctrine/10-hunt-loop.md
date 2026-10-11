@@ -132,15 +132,25 @@ built, one proven rung at a time. Re-score the board.
   `worldmodel.md` top to bottom and ask: *what surface or fact am I not using? what would
   someone who just arrived look at first?* The answer is often a seam you walked past while
   tunnelling.
+- **Protect your context window — it is the scarcest resource, and overflowing it turns a
+  solvable box into endless relaunches.** Bulk-output or self-contained work (broad enumeration,
+  parsing walls of output, web research, exploit drafting, reversing, verification) is
+  **delegated** (see `doctrine/50-subagents.md`), not run in your own window — you hold only the
+  distilled facts and the decision. A stage you are tempted to push through by piling output into
+  your own context is itself the signal to **decompose and delegate**; never personally grind the
+  long tail of a hard stage in-context.
 
-**External supervisor (`supervisor.md`):** an operator-level reviewer may run alongside you
-and write `supervisor.md` in the run dir when it sees you drifting. At the start of each pass,
-check its first line `SUPERVISOR_TICK: N`. Act on it **only when N is newer** than the tick you
-last applied (record the applied tick in `journal.md` so you don't re-apply it). When the tick
-is new: stop your current action, do a quick self-review (re-read `worldmodel.md` + recent
-evidence), then follow its STOP / DO NEXT as top priority — its redirects **override** your own
-"dead end" conclusions. You never edit `supervisor.md`; the reviewer owns it. If no such file
-exists, ignore this — you are not being supervised and proceed normally.
+**External supervisor (`supervisor.md`) — a first-class input, not background noise.** An
+operator-level reviewer may run alongside you and write `supervisor.md` when it sees you
+drifting; it sees the drift you cannot from inside the tunnel. At the start of each pass check
+its first line `SUPERVISOR_TICK: N` and act **only when N is newer** than the tick you last
+applied (record the applied tick in `journal.md` so you don't re-apply it). When it is newer:
+**stop**, read it in full, do a quick self-review (re-read `worldmodel.md` + recent evidence),
+then adopt its STOP / DO NEXT as **higher priority than your own momentum** — note in
+`journal.md` that you applied it and **actually change course; never note-it-and-continue.** Its
+redirects **override** your own "dead end" conclusions and your current plan. You never edit
+`supervisor.md`; the reviewer owns it. If no such file exists, you are not being supervised —
+proceed normally.
 
 ## Phase as a side effect
 
