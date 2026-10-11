@@ -29,6 +29,18 @@ pass and why**. Choose it by expected value, not by habit:
   **widening what you can see** (broad+deep enumeration) rather than attacking. You
   cannot form good hypotheses about surface you haven't observed. Enumerate until the
   surface stops yielding new facts, *then* attack the richest seam.
+- **Surface is not only open ports.** A thin, filtered, or empty port scan is itself a
+  finding — a prompt to *widen the kind of surface you consider*, not a reason to call the
+  box dead. From the evidence you already hold (hostnames, cert SANs, HTTP bodies/headers,
+  redirects, leaked strings/keys, the challenge's framing), work out **what you are actually
+  facing** — a web app fronting a backend, a cloud account/API, a container or orchestrator,
+  a directory service, an embedded device, a message bus, something else — then research that
+  surface (§2) and attack it from evidence, exactly as you would a port/service. Do not reset
+  a target as "dead" until you have ruled out that its real surface simply isn't raw ports.
+  This is the same epistemic loop, applied to discovering the surface class. When you spot a
+  **generalizable** fingerprint (one that would mean the same on another box), consult — and,
+  once confirmed, extend — `/home/kali/redcat2/reference/surface-signals.md` (observation →
+  environment → direction only; never a step list — keep it a pointer, not a playbook).
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
