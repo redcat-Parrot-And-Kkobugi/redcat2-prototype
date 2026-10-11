@@ -5,7 +5,7 @@
 #  user.txt + root.txt. Needs the newest HAR in har/ only when the token is stale.
 #
 #    ./hunt <machine_name|ip> [orchestrator_model] [extra notes]
-#      ./hunt Blizzard                 # name -> HTB API resolves/spawns, opus orchestrator
+#      ./hunt Blizzard                 # name -> HTB API resolves/spawns, Opus 4.8 orchestrator
 #      ./hunt 10.10.11.42 opus "the web app on 443 looks custom"
 #      ./hunt Blizzard sonnet          # cheaper orchestrator
 #
@@ -28,7 +28,7 @@ done
 set -- "${ARGS[@]}"
 
 TARGET="${1:?usage: hunt [--fresh] <machine_name|ip> [model] [notes]}"
-MODEL="${2:-opus}"            # orchestrator model; Insane wants the strongest. Sub-agents pick their own.
+MODEL="${2:-claude-opus-4-8}" # orchestrator model (default: Opus 4.8). Insane wants the strongest. Sub-agents pick their own.
 NOTES="${3:-}"
 MAX_RESTARTS="${MAX_RESTARTS:-20}"   # auto-relaunch budget on crash/overflow (NO_RESTART=1 to disable)
 

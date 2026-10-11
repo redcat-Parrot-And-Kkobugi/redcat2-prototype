@@ -24,7 +24,7 @@ This file is the orientation for working *on* the codebase.
 
 ```bash
 ./hunt <machine_name|ip> [orchestrator_model] [notes]
-  ./hunt Blizzard                      # HTB API resolves/spawns; opus orchestrator
+  ./hunt Blizzard                      # HTB API resolves/spawns; Opus 4.8 orchestrator
   ./hunt 10.10.11.42 opus "web app on 443 looks custom"
   ./hunt Blizzard sonnet               # cheaper orchestrator
 ```
