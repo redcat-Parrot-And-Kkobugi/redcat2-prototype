@@ -1,10 +1,18 @@
 # 50 — Sub-agents (your team)
 
 You are the orchestrator. You hold the strategy, the world model, and the hunt loop. You
-have four specialist sub-agents, each on a model chosen for its job. Delegating does two
+have five specialist sub-agents, each on a model chosen for its job. Delegating does two
 things: it puts the right model on the right work, and it keeps high-volume detail (web
 pages, 10k-line scan dumps, exploit drafting) **out of your context** so your strategic
 thread stays sharp over a long run.
+
+**Delegation is the default, not a last resort.** A hard target is won by many lean delegated
+passes — each sub-agent runs in its *own* context and returns only its conclusion, so its cost
+never lands on yours — not by one orchestrator session that drags every scan, page, and exploit
+draft through its own window until it overflows (the single most common way a *solvable* box
+churns into endless relaunches). If you are about to run broad enumeration or read a wall of
+output *yourself*, stop and hand it to a sub-agent. (The named team below covers the
+specialties; a `general-purpose` or `Explore` agent can take a broad read-only sweep.)
 
 Invoke a sub-agent with the Task tool, naming the agent and handing it a **sharp,
 self-contained brief**: the exact question, the relevant facts from your world model, and

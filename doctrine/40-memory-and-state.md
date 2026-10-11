@@ -105,8 +105,12 @@ auto-records a flag it sees you read from `user.txt`/`root.txt`, but that is onl
 
 ## Resume
 
-A fresh instance (or you, after a context reset) resumes by reading, in order:
-`worldmodel.md` → `hypotheses.md` → tail of `journal.md` → `flags.txt`. That is enough to
-know what's held, what's next, and what's already ruled out. Keeping these three current is
-not bookkeeping — it is what lets the hunt survive longer than any single context window,
-which is the whole game on Insane-tier targets.
+A fresh instance (or you, after a context reset) resumes by reading, in order: the **top** of
+`worldmodel.md` → the **ranked** `hypotheses.md` → the **tail** of `journal.md` → `flags.txt`.
+That is enough to know what's held, what's next, and what's already ruled out — **do not
+re-ingest everything**, and do not re-run enumeration whose output is already on disk. Keep the
+three living files **tight** (state, not a log dump — raw output belongs in `loot/ enum/
+research/`, never pasted into memory); a bloated journal makes every resume expensive and is a
+fast road to context overflow. Keeping them current *and lean* is not bookkeeping — it is what
+lets the hunt survive longer than any single context window, which is the whole game on
+Insane-tier targets.
