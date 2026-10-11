@@ -96,9 +96,12 @@ markers and only refreshes between them. If you draw any banner or diagram anywh
 
 ## Flags
 
-The instant you read a real flag, append it to `flags.txt` as `user=<hex>` or `root=<hex>`
-and emit `<FLAG><hex></FLAG>` in your output. A background watcher auto-submits flags to
-the lab API, so you don't call the submit endpoint yourself — just capture and emit.
+The instant you read a real flag — **before your next action, never batched to the end of the
+run** — append it to `flags.txt` as `user=<hex>` or `root=<hex>` and emit `<FLAG><hex></FLAG>` in
+your output. A background watcher auto-submits flags to the lab API (you never call submit
+yourself) and **skips any user/root it has already submitted** (`logs/.submitted`); it also
+auto-records a flag it sees you read from `user.txt`/`root.txt`, but that is only a backstop (up to
+`FLAG_INTERVAL` late) — you still record it the moment you see it.
 
 ## Resume
 
