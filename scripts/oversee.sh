@@ -21,12 +21,34 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
 unset ANTHROPIC_API_KEY
 : "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN in .env}"
 
-NAME="${1:?usage: oversee.sh <machine-name|run-slug> [\"operator directive\"]}"
-OP_NOTE="${2:-${OP_NOTE:-}}"
+usage(){ echo "usage: oversee.sh [-s|--slug <name>] [-m|--model <model>] [-d|--directive <text>] [-i|--interval <sec>] [--oneshot] [<slug> [directive]]" >&2; }
+_slug="" _model="" _directive="" _interval="" _oneshot=""; pos=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -s|--slug)      [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _slug="$2"; shift 2 ;;
+    -m|--model)     [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _model="$2"; shift 2 ;;
+    -d|--directive) [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _directive="$2"; shift 2 ;;
+    -i|--interval)  [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _interval="$2"; shift 2 ;;
+    --oneshot)      _oneshot=1; shift ;;
+    -h|--help)      usage; exit 0 ;;
+    --)             shift; while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
+    -*)             echo "unknown option: $1" >&2; usage; exit 2 ;;
+    *)              pos+=("$1"); shift ;;
+  esac
+done
+# positional back-compat (hunt calls `oversee.sh '<slug>'`): pos[0]=slug, pos[1]=directive, only if the flag was not given
+[ -z "$_slug" ] && [ "${#pos[@]}" -ge 1 ] && _slug="${pos[0]}"
+[ -z "$_directive" ] && [ "${#pos[@]}" -ge 2 ] && _directive="${pos[1]}"
+[ "${#pos[@]}" -gt 2 ] && echo "${y:-}warning: extra positional args ignored — pass model/directive as -m/-d (e.g. -m opus -d \"…\")${n:-}" >&2
+# precedence: flag > env > default. Empty slug → newest run (so `-d "…"` alone works).
+NAME="$_slug"
+OP_NOTE="${_directive:-${OP_NOTE:-}}"
+MODEL="${_model:-${OVERSEE_MODEL:-opus}}"
+INTERVAL="${_interval:-${OVERSEE_INTERVAL:-600}}"
+[ -n "$_oneshot" ] && ONESHOT=1
 RUNDIR="$(rc2_resolve_rundir "$NAME")"
-[ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "${r}no run dir for '$NAME'${n} (start the hunt first)"; exit 1; }
-INTERVAL="${OVERSEE_INTERVAL:-600}"
-MODEL="${OVERSEE_MODEL:-opus}"
+[ -n "${RUNDIR:-}" ] && [ -d "$RUNDIR" ] || { echo "${r}no run dir${NAME:+ for '$NAME'}${n} (pass -s <name>, or start a hunt first)"; exit 1; }
+NAME="$(basename "$RUNDIR")"   # normalize to the resolved slug (used by the digest + pgrep)
 SUP="$RUNDIR/supervisor.md"
 HIST="$RUNDIR/logs/supervisor.jsonl"
 SYS="$ROOT/OVERSEER.md"
