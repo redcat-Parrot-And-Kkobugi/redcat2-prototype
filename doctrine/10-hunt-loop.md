@@ -49,10 +49,8 @@ pass and why**. Choose it by expected value, not by habit:
     second look.
   - **A web port means find its name.** The moment an HTTP(S) port (80/443/8080/…) is open,
     get the canonical hostname (redirect target, `http-title`, cert CN/SAN) and add it with
-    the IP to `/etc/hosts` (`sudo -A`), then browse **by name** — HTB web apps routinely
-    redirect to a `<name>.htb` vhost and serve nothing on the bare IP. Then fuzz for more
-    vhosts/subdomains (ffuf `Host:` header); that is how second-tier surfaces like
-    `aws.<name>.htb` appear.
+    the IP to `/etc/hosts` (`sudo -A`), then check it **by name** — HTB web apps routinely
+    redirect to a `<name>.htb` vhost and serve nothing on the bare IP.
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
