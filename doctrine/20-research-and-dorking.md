@@ -64,7 +64,8 @@ inurl:<unique-endpoint> <product>               # fingerprint confirmation
 
 Beyond Google: **NVD/CVE** (authoritative details + affected ranges), **exploit-db** and
 **GitHub** (PoCs), **vendor advisories & changelogs** (the fix commit often *is* the
-exploit map), **HackerOne/writeups** for the technique class. The **Google Hacking
+exploit map), **HackerOne/writeups** for the *technique or vulnerability class* — never the
+target box's own writeup/walkthrough (see `00-prime-directive.md` → No spoilers). The **Google Hacking
 Database (GHDB)** is a catalogue of dorks worth mining for the target's tech.
 
 ## Vetting — read before you run
