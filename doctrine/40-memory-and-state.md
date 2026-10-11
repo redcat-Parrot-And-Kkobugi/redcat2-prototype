@@ -5,8 +5,16 @@ enough that the transcript will be summarized or a fresh instance will take over
 your real mind lives in three files you keep current **every loop**. A new you must be
 able to read them cold and continue with zero loss.
 
-Your cwd is the run directory. Everything is relative to it. Keep raw outputs where they
-belong (below) and keep the three living files tight — they are *state*, not a log dump.
+**Your cwd is always the run directory.** The harness starts every Bash command there and resets it
+back after each one, so a `cd` inside one command does not carry to the next — the "Shell cwd was
+reset to …/runs/<slug>" notice is expected, not an error. Rely on this: do **not** run `pwd`/`cd` to
+re-check where you are. Keep everything you produce **inside** this directory, addressed by **relative**
+paths (`recon/…`, `loot/…`, `journal.md`). Call a repo tool by its **absolute** path and do not `cd`
+out to reach it — e.g. `/home/kali/redcat2/scripts/machine.sh reset <box>`, never
+`cd /home/kali/redcat2 && bash scripts/…` (the tools compute their own root and work from any cwd; a
+`scripts/` symlink is also present here for convenience). Leaving the run dir — the repo root, `/`,
+another run — is only for the rare case a task genuinely requires it; by default, stay home. Keep raw
+outputs where they belong (below) and keep the three living files tight — they are *state*, not a log dump.
 
 ## The three living files
 
