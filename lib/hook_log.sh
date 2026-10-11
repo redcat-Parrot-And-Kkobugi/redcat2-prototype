@@ -38,6 +38,21 @@ if [ "$phase" = "pre" ]; then
       exit 2
     fi
   fi
+
+  # integrity: block a lookup of THIS box's OWN public solution (htb + machine_name + spoiler keyword).
+  # Narrow on purpose — all three required — so common-word box names don't false-positive; the broad
+  # spirit ("don't look up how this box is solved") lives in doctrine 00 → No spoilers. Fail-open.
+  q="$(printf '%s' "$input" | jq -r 'select(.tool_name=="WebSearch" or .tool_name=="WebFetch") | [(.tool_input.query // ""),(.tool_input.url // ""),(.tool_input.prompt // "")] | join(" ")' 2>/dev/null)"
+  if [ -n "$q" ]; then
+    local_mn="$( [ -f "$cwd/target.env" ] && . "$cwd/target.env" 2>/dev/null; printf '%s' "${machine_name:-}")"
+    if [ -n "$local_mn" ] \
+       && printf '%s' "$q" | grep -qiw 'htb' \
+       && printf '%s' "$q" | grep -qiwF "$local_mn" \
+       && printf '%s' "$q" | grep -qiE 'writeup|walkthrough|solution|guide|공략'; then
+      echo "redcat2 integrity: looking up this box's public solution is forbidden (htb + '$local_mn' + writeup/walkthrough/solution/guide). Research the technique/CVE/product instead — not how this box is solved. (doctrine 00 → No spoilers)" >&2
+      exit 2
+    fi
+  fi
   exit 0
 fi
 

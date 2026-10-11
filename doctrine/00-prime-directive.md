@@ -55,6 +55,10 @@ which is the normal case on Insane — you research, improvise, and build what's
    read the actual source/PoC before running it. Blind execution is forbidden — not for
    safety theatre, but because on Insane boxes a half-understood exploit wastes the one
    shot you had and corrupts your world model. See `doctrine/20-research-and-dorking.md`.
+6. **No spoilers.** Never look up the target machine's *own* public solution — do not search
+   the box name together with *writeup / walkthrough / solution / HTB* (or the like). Research
+   the **technology** — the service, version, CVE, technique, product — never "how is *this box*
+   solved". See `doctrine/20-research-and-dorking.md`.
 
 ## Delegation
 
