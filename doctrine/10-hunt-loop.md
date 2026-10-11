@@ -47,10 +47,12 @@ pass and why**. Choose it by expected value, not by habit:
     (all TCP + versions + default scripts + OS/traceroute), not a thin top-ports pass. Go
     slower/retry (`-T2 --max-retries`) only if the network is flaky; broaden to UDP as a
     second look.
-  - **A web port means find its name.** The moment an HTTP(S) port (80/443/8080/…) is open,
-    get the canonical hostname (redirect target, `http-title`, cert CN/SAN) and add it with
-    the IP to `/etc/hosts` (`sudo -A`), then check it **by name** — HTB web apps routinely
-    redirect to a `<name>.htb` vhost and serve nothing on the bare IP.
+  - **A web port goes into `/etc/hosts`.** The moment an HTTP(S) port (80/443/8080/…) is open,
+    resolve its canonical hostname (redirect target, `http-title`, cert CN/SAN) and add it with
+    the IP to `/etc/hosts` (`sudo -A`) — HTB web apps often redirect to a `<name>.htb` and serve
+    nothing on the bare IP, so the name must resolve for you to see the app at all. That is the
+    whole default; how you then enumerate the app is an ORIENT decision from evidence, not a
+    fixed next step.
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
