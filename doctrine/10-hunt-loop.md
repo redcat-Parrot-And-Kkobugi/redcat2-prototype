@@ -41,6 +41,18 @@ pass and why**. Choose it by expected value, not by habit:
   **generalizable** fingerprint (one that would mean the same on another box), consult — and,
   once confirmed, extend — `/home/kali/redcat2/reference/surface-signals.md` (observation →
   environment → direction only; never a step list — keep it a pointer, not a playbook).
+- **Opening reflexes (defaults, not a recipe).** Two moves that are almost always the right
+  first look — do them by default and only skip with a reason:
+  - **Full first scan.** Open enumeration with `nmap -sVC -p- -Pn -A --min-rate 5000 <ip>`
+    (all TCP + versions + default scripts + OS/traceroute), not a thin top-ports pass. Go
+    slower/retry (`-T2 --max-retries`) only if the network is flaky; broaden to UDP as a
+    second look.
+  - **A web port means find its name.** The moment an HTTP(S) port (80/443/8080/…) is open,
+    get the canonical hostname (redirect target, `http-title`, cert CN/SAN) and add it with
+    the IP to `/etc/hosts` (`sudo -A`), then browse **by name** — HTB web apps routinely
+    redirect to a `<name>.htb` vhost and serve nothing on the bare IP. Then fuzz for more
+    vhosts/subdomains (ffuf `Host:` header); that is how second-tier surfaces like
+    `aws.<name>.htb` appear.
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
