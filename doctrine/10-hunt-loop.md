@@ -50,9 +50,12 @@ pass and why**. Choose it by expected value, not by habit:
   - **A web port goes into `/etc/hosts`.** The moment an HTTP(S) port (80/443/8080/…) is open,
     resolve its canonical hostname (redirect target, `http-title`, cert CN/SAN) and add it with
     the IP to `/etc/hosts` (`sudo -A`) — HTB web apps often redirect to a `<name>.htb` and serve
-    nothing on the bare IP, so the name must resolve for you to see the app at all. That is the
-    whole default; how you then enumerate the app is an ORIENT decision from evidence, not a
-    fixed next step.
+    nothing on the bare IP, so the name must resolve for you to see the app at all. `/etc/hosts`
+    is **additive**: one IP can carry many names, so whenever you learn another name for a target
+    from *any* service — a redirect or cert SAN, or an LDAP/SMB/Kerberos realm and DC name on a
+    directory-service host — add it to that same IP too (AD boxes routinely need several). That
+    is the whole default; how you then enumerate is an ORIENT decision from evidence, not a fixed
+    next step.
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
