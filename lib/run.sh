@@ -106,12 +106,38 @@ journal.md and stop — do not grind or fabricate progress. $NOTES"
 # from the three living files (disk is the memory). A CLEAN stop (exit 0 = flags or a written blocker)
 # is NOT second-guessed. NO_RESTART=1 runs once. Uses: PROMPT MODEL SYSPROMPT CONV LOG MAX_RESTARTS
 # NO_RESTART RUNDIR TARGET RC2_ROOT. Sets global RUN_PID (so cleanup can kill the agent).
+
+# rc2_relaunch_target_line <rundir> — on a relaunch, print the current target IP (banner-style),
+# best-effort refreshing it from the HTB API in case the box was respawned to a NEW ip (id-matched,
+# so an unrelated active machine is never picked up). Never fatal: with no API/token it just prints
+# the known target_ip. target.env is rewritten only when the ip actually changed, so a running hunt
+# — which already sourced run.sh and only re-reads target.env in its watchers — is not disrupted.
+rc2_relaunch_target_line() {
+  local rundir="$1" ip="${target_ip:-?}" act live
+  if [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ]; then
+    act="$(htb_active 2>/dev/null)"
+    if [ "$(printf '%s' "$act" | jq -r '.info.id // empty' 2>/dev/null)" = "$machine_id" ]; then
+      live="$(printf '%s' "$act" | jq -r '.info.ip // empty' 2>/dev/null)"
+      if [ -n "$live" ] && [ "$live" != "null" ] && [ "$live" != "$ip" ]; then
+        [ -f "$rundir/target.env" ] && sed -i "s/^target_ip=.*/target_ip=\"$live\"/" "$rundir/target.env" 2>/dev/null || true
+        export target_ip="$live"
+        printf '\033[33m[hunt] target IP changed: %s -> %s (box respawned)\033[0m\n' "$ip" "$live" | tee -a "$LOG"
+        ip="$live"
+      fi
+    fi
+  fi
+  printf '[hunt] target: %s (%s)\n' "$ip" "${machine_name:-?}" | tee -a "$LOG"
+}
+
 rc2_run_loop() {
   local attempt=0 rc
   local PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
   while :; do
     attempt=$((attempt+1))
-    [ "$attempt" -gt 1 ] && printf '\033[33m[hunt] relaunch %d/%d — resuming from disk memory\033[0m\n' "$attempt" "$MAX_RESTARTS" | tee -a "$LOG"
+    if [ "$attempt" -gt 1 ]; then
+      printf '\033[33m[hunt] relaunch %d/%d — resuming from disk memory\033[0m\n' "$attempt" "$MAX_RESTARTS" | tee -a "$LOG"
+      rc2_relaunch_target_line "$RUNDIR"
+    fi
     claude -p "$PROMPT" \
       --output-format stream-json \
       --model "$MODEL" \
