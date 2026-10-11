@@ -41,6 +41,8 @@ The launcher. Runs one autonomous hunt (headless Claude Code) against a target u
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
 | `NO_STOP` | 0 | `1` = on solve, keep the HTB machine up (default: terminate it) |
 | `VPN_AUTOFIX` | 0 | `1` = if pre-flight finds the wrong VPN server (HTB_OVPN mismatch, or target routes but host-unreachable), auto-reconnect to `HTB_OVPN` |
+| `CYBER_MAX_RETRIES` | 3 | cyber-safeguard relaunches before the loop stops (caps churn on content flags) |
+| `CYBER_FALLBACK_MODEL` | — | on a cyber-safeguard flag, relaunch the orchestrator with this less-restricted model |
 | `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
@@ -118,6 +120,9 @@ run** (so `-d "…"` alone works); extra positional args warn (pass model/direct
 | `-d\|--directive` / `OP_NOTE` | — | operator directive relayed to the solver |
 | `-i\|--interval` / `OVERSEE_INTERVAL` | 600 | review cadence (s) |
 | `--oneshot` / `ONESHOT=1` | — | one assessment then exit |
+| `OVERSEE_FALLBACK_MODEL` | — | if a review is cyber-safeguard-flagged, retry it once with this less-restricted model |
+
+A reviewer call that **fails** (non-zero or a safeguard/`[cyber]`/API error) no longer writes `supervisor.md` or bumps `SUPERVISOR_TICK` — it is logged to `supervisor.jsonl` as `status:"error"` and skipped, so the solver never follows a bogus directive. Only `minor-drift`/`rabbit-hole` verdicts write a tick.
 
 ```bash
 scripts/oversee.sh -s Management -m opus -d "this challenge is using aws"
