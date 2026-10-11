@@ -44,9 +44,12 @@ echo "${dim}$( [ "${REPLAY:-0}" = "1" ] && echo "replaying full history, then li
 # agent reasoning (text/thinking) from conv.jsonl; --no-tools avoids duplicating the tool feed below.
 CONV_PID=""
 if [ "${NOCONV:-0}" != "1" ] && command -v python3 >/dev/null 2>&1 && [ -f "$ROOT/scripts/conv_fmt.py" ]; then
-  ( tail -F $start "$conv" 2>/dev/null | python3 "$ROOT/scripts/conv_fmt.py" --no-tools ) &
-  CONV_PID=$!
-  trap '[ -n "$CONV_PID" ] && kill "$CONV_PID" 2>/dev/null' EXIT INT TERM
+  # Own process group (setsid) so cleanup kills the WHOLE pipeline — not just the subshell. A `( … ) &`
+  # async pipeline ignores SIGINT (no job control), so Ctrl-C alone would orphan `tail -F`/python3 and
+  # keep spewing the live log to the terminal; the trap's group-kill is what actually stops it.
+  setsid bash -c "tail -F $start \"$conv\" 2>/dev/null | python3 \"$ROOT/scripts/conv_fmt.py\" --no-tools" &
+  CONV_PID=$!   # session+group leader → PGID == CONV_PID
+  trap '[ -n "$CONV_PID" ] && kill -- -"$CONV_PID" 2>/dev/null' EXIT INT TERM
 fi
 
 for _ in $(seq 1 600); do [ -f "$jsonl" ] && break; sleep 1; done
