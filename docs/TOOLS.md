@@ -48,7 +48,7 @@ The launcher. Runs one autonomous hunt (headless Claude Code) against a target u
 | `FRESH` | — | same as `--fresh` |
 
 ```bash
-./hunt Management                      # name → resolve/spawn, opus orchestrator
+./hunt Management                      # name → resolve/spawn, Opus 4.8 orchestrator
 ./hunt Management sonnet               # cheaper orchestrator
 ./hunt 10.10.11.42 opus "custom web app on 443"
 IP_WAIT_TRIES=3 IP_WAIT_INTERVAL=20 ./hunt Fast     # short spawn wait for a quick box

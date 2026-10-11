@@ -29,7 +29,7 @@ real commands against the target with `--dangerously-skip-permissions`.
 ```bash
 cd /home/kali/redcat2
 cp .env.example .env                 # fill CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)
-./hunt Blizzard                      # HTB name → resolve/spawn → run (opus orchestrator)
+./hunt Blizzard                      # HTB name → resolve/spawn → run (Opus 4.8 orchestrator)
 ./hunt 10.10.11.42 sonnet "web on 443 looks custom"   # raw IP + cheaper model + a hint
 ```
 
@@ -84,7 +84,7 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 
 - **`<machine_name|ip>`** — an HTB name (resolved + spawned via the API; needs a token) or a raw
   IP (IP-only mode: no spawn/submit).
-- **`[orchestrator_model]`** — the orchestrator model; default `opus`. Sub-agents pick their own.
+- **`[orchestrator_model]`** — the orchestrator model; default `claude-opus-4-8` (Opus 4.8). Sub-agents pick their own.
 - **`[extra notes]`** — free-text hint appended to the launch prompt.
 - **`--fresh`** — archive any existing run for this target and start clean.
 
