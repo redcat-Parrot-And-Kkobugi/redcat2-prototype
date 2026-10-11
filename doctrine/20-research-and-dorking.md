@@ -29,6 +29,24 @@ a dead end. This is cheap memory across boxes; use it to avoid re-deriving and r
 - Before running **any** public exploit — you read the code first (see "Vetting").
 - When stuck: a different search, framed by a *new* fact, often unlocks a frozen hypothesis.
 
+## Source priority — reach for the most authoritative source first
+
+Trust sources in order, so you reason from how a thing *actually* works rather than third-hand
+blog spam:
+
+1. **The primary/authoritative source** — the thing's own official docs, source code, or spec
+   (and a CVE's original advisory). It defines the real behavior; start here whenever the target
+   runs a product/tool/protocol with such docs.
+2. **Curated offensive references** — HackTricks, PayloadsAllTheThings, GTFOBins and the like, for
+   the attack *technique* against that class. (`scripts/rag.sh -p` already greps your local
+   PayloadsAllTheThings / GTFOBins.)
+3. **Open web search / dorking** — blogs, Q&A, talks for everything else.
+
+This is a default lean, not a rigid gate: skip ahead by judgment when the question is purely an
+offensive technique (a curated ref may be the fastest correct answer) or when the official docs
+don't cover the bug. All three tiers are legitimate *technology* research — the only thing off-limits
+is the target box's own public solution (see `00-prime-directive.md` → No spoilers).
+
 ## Google dorking — operators
 
 Dorking is precision search: constrain the result set with operators so you find the
