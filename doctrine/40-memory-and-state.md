@@ -88,9 +88,14 @@ Shape (create it if missing — `H<n>` keys mirror the board exactly):
   },
   "confirmed_path": [
     { "h": "H2", "summary": "worker RCE via unsafe yaml.load -> shell as worker", "at": "<utc>" }
-  ]
+  ],
+  "override": null
 }
 ```
+`override` is normally `null`. Set it to `{ "hypothesis": "H<n>", "reason": "<why this path, not a
+switch>", "nonce": "<unique string>" }` **only** to push past a guard block once (see
+`10-hunt-loop.md` → the guard); the harness honours it a single time, then records the nonce as spent.
+A new block needs a fresh `nonce`; repeated overrides on the same hypothesis escalate.
 Rules: **(1)** `current_hypothesis` always names the block you are pursuing *right now* — the hook
 counts your experiments against it. **(2)** On a VERIFY-confirmed flag or step, append one
 `confirmed_path` entry — one clean sentence a reader could follow; it is copied **live** into

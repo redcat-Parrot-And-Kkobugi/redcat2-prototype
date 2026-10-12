@@ -140,6 +140,20 @@ built, one proven rung at a time. Re-score the board.
   your own context is itself the signal to **decompose and delegate**; never personally grind the
   long tail of a hard stage in-context.
 
+**The guard enforces this — it does not replace your judgement.** The budgets and freezes above are
+mirrored in `ledger.json` (yours) and counted in `logs/accounting.json` (the harness's). When the
+operator enables the guard (`RC2_GUARD=warn|block`), the PreToolUse hook will warn — or, in `block`
+mode, refuse the call — when (a) the **same action repeats** `RC2_REPEAT_FREEZE` times (default 4) on
+one hypothesis **with no meaningful variation**, (b) you keep working a hypothesis you have marked
+`frozen`, or (c) the **global experiment ceiling** is hit. A *materially different* attempt (new
+vector, tool, encoding, or assumption) resets the repeat count — genuine re-angling is never blocked;
+only reworded retries pile up. The block message states the reason, the ledger snapshot, and the exact
+command it stopped, then offers three moves: **vary materially**, **freeze + switch**, or **override**.
+To override, set in `ledger.json` `.override = {"hypothesis":"H<n>","reason":"<why this path, not a
+switch>","nonce":"<unique>"}`; it is honoured **once**, then consumed and logged. Use it only when you
+are genuinely sure the path is right — repeated overrides on the same hypothesis escalate and will
+require arbiter sign-off, so an override is never a quiet way to dodge a switch.
+
 **External supervisor (`supervisor.md`) — a first-class input, not background noise.** An
 operator-level reviewer may run alongside you and write `supervisor.md` when it sees you
 drifting; it sees the drift you cannot from inside the tunnel. At the start of each pass check
