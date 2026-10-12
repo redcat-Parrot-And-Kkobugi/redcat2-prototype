@@ -86,7 +86,8 @@ MD
   "hypotheses": {
     "H1": { "claim": "The exposed surface is unknown and must be mapped before any attack", "target": "full surface", "status": "open", "budget_max": ${RC2_BUDGET_DEFAULT:-8}, "freeze": { "frozen": false, "confidence": null, "reason": "", "by": "self", "resumable": true, "at": "" } }
   },
-  "confirmed_path": []
+  "confirmed_path": [],
+  "override": null
 }
 JSON
   [ -s "$RUNDIR/logs/accounting.json" ] || cat > "$RUNDIR/logs/accounting.json" <<JSON
@@ -95,8 +96,10 @@ JSON
   "updated_utc": "$(rc2_utc)",
   "global": { "experiments": 0, "ceiling": ${RC2_CEIL:-800}, "warn_at": ${RC2_WARN:-450}, "overrides_used": 0 },
   "per_hypothesis": {},
-  "progress": { "worldmodel_fact_count": 0, "last_progress_utc": null, "last_progress_fp": null, "stale_ticks": 0 },
-  "supervisor": { "consecutive_rabbit_hole": 0, "last_verdict": null, "last_fp": null }
+  "progress": { "last_progress_utc": null, "last_progress_fp": null, "last_progress_experiment": 0 },
+  "supervisor": { "consecutive_rabbit_hole": 0, "last_verdict": null, "last_fp": null },
+  "consumed_overrides": [],
+  "freeze_candidate": null
 }
 JSON
   echo "$RUNDIR"
@@ -272,7 +275,8 @@ rc2_write_status() {
       echo "- (no ledger.json yet)"
     fi
     if [ -s "$L/accounting.json" ]; then
-      jq -r '"- experiments: \(.global.experiments)/\(.global.ceiling) (warn@\(.global.warn_at)) · overrides: \(.global.overrides_used)"' "$L/accounting.json" 2>/dev/null || true
+      jq -r '"- experiments: \(.global.experiments)/\(.global.ceiling) (warn@\(.global.warn_at)) · overrides: \(.global.overrides_used) · stall: \((.global.experiments // 0) - (.progress.last_progress_experiment // 0)) since last fact"
+             + (if .freeze_candidate then "  ⚠️ freeze-candidate: \(.freeze_candidate.hypothesis)" else "" end)' "$L/accounting.json" 2>/dev/null || true
       jq -r '.per_hypothesis | to_entries[]? | "  - \(.key): spent=\(.value.spent) repeat=\(.value.repeat_count)"' "$L/accounting.json" 2>/dev/null || true
     fi
     echo

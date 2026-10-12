@@ -23,6 +23,101 @@ EXEMPT_RE='nc[^|]*-l|ncat[^|]*-l|socat.*(LISTEN| -l)|-l[vnp]{2,4}|msfconsole|mul
 RESF="$logdir/.cmd_results"
 is_guarded(){ [ -n "$1" ] && ! printf '%s' "$1" | grep -qiE "$EXEMPT_RE" && printf '%s' "$1" | grep -qiE "$GUARD_RE"; }
 
+# ── P1: rabbit-hole accounting + guard ───────────────────────────────────────
+# Accounting (counters in logs/accounting.json) is ALWAYS written — cheap, fail-open — so WARN
+# thresholds can be calibrated. Gating (warn/block) is opt-in: RC2_GUARD=off (default) | warn | block.
+# This is the "accounting" half of the intent/accounting split: the agent owns ledger.json, the hook
+# owns accounting.json and never trusts the agent's hand-written JSON for its counters.
+GUARD_MODE="${RC2_GUARD:-off}"
+LEDGER="$cwd/ledger.json"
+ACCT="$logdir/accounting.json"
+REPEAT_FREEZE="${RC2_REPEAT_FREEZE:-4}"
+
+# rc2_fp <input-json> — a conservative "shape" of this call: same target action with a different
+# payload hashes the same (so a reworded retry counts as a repeat), but a different command/tool/
+# approach hashes differently (so genuine variation is NOT counted). The sonnet sameness-judge (next
+# sub-phase) refines the hard cases; this is the cheap per-call proxy.
+rc2_fp() {
+  local ip tool cmd body
+  ip="$( [ -f "$cwd/target.env" ] && . "$cwd/target.env" 2>/dev/null; printf '%s' "${target_ip:-}")"
+  tool="$(printf '%s' "$1" | jq -r '.tool_name // "?"' 2>/dev/null)"
+  cmd="$(printf '%s' "$1" | jq -r '.tool_input.command // empty' 2>/dev/null)"
+  if [ -n "$cmd" ]; then
+    body="$(printf '%s' "$cmd" | tr -s ' \t\n' ' ')"
+    [ -n "$ip" ] && body="$(printf '%s' "$body" | sed "s/${ip//./\\.}/IP/g" 2>/dev/null)"
+    body="$(printf '%s' "$body" | sed 's/[0-9a-fA-F]\{8,\}/HEX/g' 2>/dev/null | cut -c1-200)"
+  else
+    body="$(printf '%s' "$1" | jq -rc '.tool_input' 2>/dev/null | cut -c1-200)"
+  fi
+  printf '%s|%s' "$tool" "$body" | md5sum | cut -c1-16
+}
+
+# rc2_guard_msg <reason> <hypo> <exp> <ceil> <rep> — structured message to the agent (point 7: echoes
+# the action it was about to take + the ledger snapshot + the concrete alternatives).
+rc2_guard_msg() {
+  local bc; bc="$(printf '%s' "$input" | jq -r '.tool_input.command // (.tool_name) // "?"' 2>/dev/null | tr -s ' \t\n' ' ' | cut -c1-160)"
+  {
+    echo "redcat2 guard [$GUARD_MODE]: $1."
+    echo "  ledger: current=$2  experiments=$3/$4  repeat_on_$2=$5   (solved runs here finished in ~186-416 calls)"
+    echo "  you were about to run: $bc"
+    echo "  DO ONE OF: (a) a MATERIALLY different attempt — new vector/tool/assumption, not a reworded retry;"
+    echo "     (b) FREEZE $2: in ledger.json set .hypotheses.$2.freeze.frozen=true with an honest confidence + one-line reason, then switch to another hypothesis;"
+    echo "     (c) only if you are sure this path is right: set .override={\"hypothesis\":\"$2\",\"reason\":\"<why this, not a switch>\",\"nonce\":\"<unique>\"} in ledger.json to proceed ONCE (it is consumed and logged; repeats escalate)."
+  } >&2
+}
+
+# rc2_guard_pre — always updates accounting; when RC2_GUARD!=off, may warn (exit 0) or block (return 2).
+rc2_guard_pre() {
+  [ -s "$LEDGER" ] && [ -s "$ACCT" ] || return 0        # ledger-based model not in use -> no-op
+  local cur frozen fp exp ceil warn last_fp prev_rep new_rep
+  cur="$(jq -r '.current_hypothesis // empty' "$LEDGER" 2>/dev/null)"; [ -n "$cur" ] || cur="unassigned"
+  frozen="$(jq -r --arg h "$cur" '.hypotheses[$h].freeze.frozen // false' "$LEDGER" 2>/dev/null)"
+  fp="$(rc2_fp "$input")"
+  exp="$(jq -r '.global.experiments // 0' "$ACCT" 2>/dev/null)"
+  ceil="$(jq -r '.global.ceiling // 999999' "$ACCT" 2>/dev/null)"
+  warn="$(jq -r '.global.warn_at // 999999' "$ACCT" 2>/dev/null)"
+  last_fp="$(jq -r --arg h "$cur" '.per_hypothesis[$h].last_action_fp // empty' "$ACCT" 2>/dev/null)"
+  prev_rep="$(jq -r --arg h "$cur" '.per_hypothesis[$h].repeat_count // 0' "$ACCT" 2>/dev/null)"
+  if [ "$fp" = "$last_fp" ]; then new_rep=$((prev_rep+1)); else new_rep=1; fi
+
+  if [ "$GUARD_MODE" != "off" ]; then
+    local reason="" blocked=""
+    if [ "$frozen" = "true" ]; then reason="current hypothesis $cur is FROZEN — do not keep working it"; blocked=1
+    elif [ "$new_rep" -ge "$REPEAT_FREEZE" ] 2>/dev/null; then reason="the same action repeated ${new_rep}x on $cur with no meaningful variation"; blocked=1
+    elif [ "$exp" -ge "$ceil" ] 2>/dev/null; then reason="global experiment ceiling reached ($exp/$ceil)"; blocked=1; fi
+
+    if [ -n "$blocked" ]; then
+      local ov_h ov_nonce ov_reason consumed
+      ov_h="$(jq -r '.override.hypothesis // empty' "$LEDGER" 2>/dev/null)"
+      ov_nonce="$(jq -r '.override.nonce // empty' "$LEDGER" 2>/dev/null)"
+      ov_reason="$(jq -r '.override.reason // empty' "$LEDGER" 2>/dev/null)"
+      consumed="$(jq -r --arg n "$ov_nonce" '.consumed_overrides // [] | index($n)' "$ACCT" 2>/dev/null)"
+      if [ -n "$ov_nonce" ] && [ "$ov_h" = "$cur" ] && [ "$consumed" = "null" ]; then
+        jq --arg n "$ov_nonce" '.consumed_overrides=((.consumed_overrides // [])+[$n]) | .global.overrides_used=((.global.overrides_used // 0)+1)' "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+        echo "redcat2 guard: OVERRIDE consumed for $cur (reason: ${ov_reason:-none}) — allowed ONCE. [$reason] Repeated overrides on $cur will require arbiter sign-off." >&2
+      else
+        rc2_guard_msg "$reason" "$cur" "$exp" "$ceil" "$new_rep"
+        if [ "$GUARD_MODE" = "block" ]; then
+          jq --arg h "$cur" '.freeze_candidate={hypothesis:$h, reason:"repeat/stall/frozen", at:(now|todate)}' "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+          return 2
+        fi
+      fi
+    elif [ "$exp" -ge "$warn" ] 2>/dev/null; then
+      echo "redcat2 guard (warn): $exp experiments (warn@$warn, ceiling $ceil). If worldmodel.md isn't gaining facts, zoom out and re-rank hypotheses." >&2
+    fi
+  fi
+
+  jq --arg h "$cur" --arg fp "$fp" \
+     '.global.experiments=((.global.experiments // 0)+1)
+      | .per_hypothesis[$h]=((.per_hypothesis[$h] // {spent:0,repeat_count:0})
+          | .spent=((.spent // 0)+1)
+          | .repeat_count=(if (.last_action_fp // "")==$fp then ((.repeat_count // 0)+1) else 1 end)
+          | .last_action_fp=$fp | .last_utc=(now|todate))
+      | .updated_utc=(now|todate)' \
+     "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+  return 0
+}
+
 if [ "$phase" = "pre" ]; then
   printf '%s' "$input" | jq -c --arg ts "$ts" \
       '{ts:$ts, event:"pre", tool:(.tool_name // "?"),
@@ -53,6 +148,9 @@ if [ "$phase" = "pre" ]; then
       exit 2
     fi
   fi
+
+  # P1: rabbit-hole accounting (always) + guard (opt-in). Fail-open; only a block returns 2.
+  rc2_guard_pre; grc=$?; [ "${grc:-0}" -eq 2 ] && exit 2
   exit 0
 fi
 
@@ -83,4 +181,14 @@ printf '%s' "$input" | jq -c --arg ts "$ts" --arg of "$outfile" --arg b "${bytes
       exit:(.tool_response.exit_code // .tool_response.returncode // null),
       out_bytes:($b|tonumber), out_file:$of}' \
   >> "$jsonl" 2>/dev/null
+
+# P1 progress signal: did worldmodel.md gain content since the last recorded fact-change? If so,
+# stamp progress (resets the stall clock the guard/analysis read). Cheap hash; fail-open.
+if [ -s "$ACCT" ] && [ -f "$cwd/worldmodel.md" ]; then
+  wmfp="$(md5sum "$cwd/worldmodel.md" 2>/dev/null | cut -c1-16)"
+  pfp="$(jq -r '.progress.last_progress_fp // empty' "$ACCT" 2>/dev/null)"
+  if [ -n "$wmfp" ] && [ "$wmfp" != "$pfp" ]; then
+    jq --arg f "$wmfp" '.progress.last_progress_fp=$f | .progress.last_progress_utc=(now|todate) | .progress.last_progress_experiment=(.global.experiments // 0) | .progress.stale_ticks=0' "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+  fi
+fi
 exit 0
