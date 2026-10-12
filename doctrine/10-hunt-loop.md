@@ -152,7 +152,11 @@ command it stopped, then offers three moves: **vary materially**, **freeze + swi
 To override, set in `ledger.json` `.override = {"hypothesis":"H<n>","reason":"<why this path, not a
 switch>","nonce":"<unique>"}`; it is honoured **once**, then consumed and logged. Use it only when you
 are genuinely sure the path is right — repeated overrides on the same hypothesis escalate and will
-require arbiter sign-off, so an override is never a quiet way to dodge a switch.
+require arbiter sign-off, so an override is never a quiet way to dodge a switch. The guard's *level*
+itself has two tiers — a **floor** the operator fixes at launch and a **live** level the supervisor
+raises or lowers as it watches you — kept in `logs/guard.mode` and `logs/.guard_secret`. Those are the
+operator/supervisor channel: **never read or write them, and never touch `logs/accounting.json`** — they
+are not part of your memory, and tampering with your own guard is out of bounds.
 
 **External supervisor (`supervisor.md`) — a first-class input, not background noise.** An
 operator-level reviewer may run alongside you and write `supervisor.md` when it sees you
