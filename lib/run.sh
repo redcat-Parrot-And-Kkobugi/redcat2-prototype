@@ -74,6 +74,31 @@ MD
 $(rc2_utc) START — target ${MACHINE_NAME:-$TARGET_IP} ($TARGET_IP). First pass: ORIENT says information is the bottleneck; open with full-surface enumeration.
 MD
   : > "$RUNDIR/flags.txt" 2>/dev/null || true
+  # machine-readable state (P0). Two files on purpose (see doctrine 40):
+  #   ledger.json          = the agent's INTENT (model-owned; mirrors hypotheses.md)
+  #   logs/accounting.json = the hook's COUNTERS (plumbing-owned; agent never writes it)
+  # Seed only if absent so a relaunch/resume preserves them (the disk is the memory).
+  [ -s "$RUNDIR/ledger.json" ] || cat > "$RUNDIR/ledger.json" <<JSON
+{
+  "schema": 1,
+  "updated_utc": "$(rc2_utc)",
+  "current_hypothesis": "H1",
+  "hypotheses": {
+    "H1": { "claim": "The exposed surface is unknown and must be mapped before any attack", "target": "full surface", "status": "open", "budget_max": ${RC2_BUDGET_DEFAULT:-8}, "freeze": { "frozen": false, "confidence": null, "reason": "", "by": "self", "resumable": true, "at": "" } }
+  },
+  "confirmed_path": []
+}
+JSON
+  [ -s "$RUNDIR/logs/accounting.json" ] || cat > "$RUNDIR/logs/accounting.json" <<JSON
+{
+  "schema": 1,
+  "updated_utc": "$(rc2_utc)",
+  "global": { "experiments": 0, "ceiling": ${RC2_CEIL:-800}, "warn_at": ${RC2_WARN:-450}, "overrides_used": 0 },
+  "per_hypothesis": {},
+  "progress": { "worldmodel_fact_count": 0, "last_progress_utc": null, "last_progress_fp": null, "stale_ticks": 0 },
+  "supervisor": { "consecutive_rabbit_hole": 0, "last_verdict": null, "last_fp": null }
+}
+JSON
   echo "$RUNDIR"
 }
 
@@ -174,6 +199,39 @@ rc2_run_loop() {
   done
 }
 
+# ── live confirmed-path (P0) ─────────────────────────────────────────────────
+# rc2_writeup_confirmed <rundir> — maintain a "Confirmed path" block at the TOP of writeup.md,
+# regenerated each status tick from ledger.json (.confirmed_path), falling back to the confirmed
+# blocks in hypotheses.md. Idempotent (owns its RC2:CONFIRMED-PATH markers) and placed ABOVE
+# report.sh's WRITEUP:START, which preserves everything above it — so the on-exit narrative keeps it.
+# Fail-open: any error leaves writeup.md as-is and never disrupts the run.
+rc2_writeup_confirmed() {
+  local rundir="$1" wu="$1/writeup.md" led="$1/ledger.json" nf list
+  local B="<!-- RC2:CONFIRMED-PATH:START (live, auto — edit below the END marker) -->"
+  local E="<!-- RC2:CONFIRMED-PATH:END -->"
+  list=""
+  [ -s "$led" ] && list="$(jq -r '.confirmed_path[]? | "- **\(.h)** — \(.summary)"' "$led" 2>/dev/null)"
+  [ -n "$list" ] || list="$(awk '/^### H/ && /confirmed/{l=$0; sub(/^### /,"- ",l); print l}' "$rundir/hypotheses.md" 2>/dev/null)"
+  [ -n "$list" ] || list="- (none confirmed yet)"
+  nf="$(mktemp)" || return 0
+  {
+    echo "$B"
+    echo "## ✅ Confirmed path (live)"
+    echo "_auto from ledger.json each status tick — VERIFY-confirmed links only_"
+    echo
+    printf '%s\n' "$list"
+    echo
+    echo "$E"
+  } > "$nf"
+  touch "$wu" 2>/dev/null || { rm -f "$nf"; return 0; }
+  if grep -qF "RC2:CONFIRMED-PATH:START" "$wu" 2>/dev/null; then
+    awk -v f="$nf" 'index($0,"RC2:CONFIRMED-PATH:START"){while((getline l<f)>0)print l; close(f); skip=1} index($0,"RC2:CONFIRMED-PATH:END"){skip=0;next} !skip{print}' "$wu" > "$wu.tmp" 2>/dev/null && mv "$wu.tmp" "$wu" 2>/dev/null
+  else
+    { cat "$nf"; echo; cat "$wu" 2>/dev/null; } > "$wu.tmp" 2>/dev/null && mv "$wu.tmp" "$wu" 2>/dev/null
+  fi
+  rm -f "$nf"
+}
+
 # ── periodic status snapshot ─────────────────────────────────────────────────
 # rc2_write_status <rundir> — one machine-generated snapshot of the CURRENT situation into
 # <rundir>/status.md (operator view + resume aid). Reads meta.env for start/elapsed. Safe anytime.
@@ -202,6 +260,22 @@ rc2_write_status() {
     echo "- confirmed: $(grep -ciE 'status:[[:space:]]*confirmed' "$rundir/hypotheses.md" 2>/dev/null)   frozen/refuted: $(grep -ciE 'status:[[:space:]]*(frozen|refuted)' "$rundir/hypotheses.md" 2>/dev/null)"
     grep -nE '^### H' "$rundir/hypotheses.md" 2>/dev/null | sed 's/^[0-9]*:/  /' | head -12
     echo
+    echo "## ledger (machine state)"
+    if [ -s "$rundir/ledger.json" ]; then
+      jq -r '
+        "- current: \(.current_hypothesis // "—")   confirmed_path: \(.confirmed_path | length)",
+        (.hypotheses | to_entries[] |
+          "  - \(.key): \(.value.status)  budget_max=\(.value.budget_max)" +
+          (if (.value.freeze.frozen // false) then "  ❄️ frozen(\(.value.freeze.confidence // "?"))" else "" end))
+      ' "$rundir/ledger.json" 2>/dev/null || echo "- (ledger.json present but unreadable)"
+    else
+      echo "- (no ledger.json yet)"
+    fi
+    if [ -s "$L/accounting.json" ]; then
+      jq -r '"- experiments: \(.global.experiments)/\(.global.ceiling) (warn@\(.global.warn_at)) · overrides: \(.global.overrides_used)"' "$L/accounting.json" 2>/dev/null || true
+      jq -r '.per_hypothesis | to_entries[]? | "  - \(.key): spent=\(.value.spent) repeat=\(.value.repeat_count)"' "$L/accounting.json" 2>/dev/null || true
+    fi
+    echo
     echo "## journal (recent)"; tail -15 "$rundir/journal.md" 2>/dev/null | sed 's/^/  /'
     echo
     echo "## recent tool calls (last 15)"
@@ -216,6 +290,7 @@ rc2_write_status() {
       printf -- "- %-10s %s files\n" "$dd" "$(find "$rundir/$dd" -type f 2>/dev/null | wc -l | tr -d ' ')"
     done
   } > "$rundir/status.md.tmp" 2>/dev/null && mv "$rundir/status.md.tmp" "$rundir/status.md" 2>/dev/null
+  rc2_writeup_confirmed "$rundir" 2>/dev/null || true   # P0: keep writeup.md's confirmed-path block live
 }
 
 # rc2_status_writer <rundir> — blocking loop: snapshot every STATUS_INTERVAL (default 600s) until

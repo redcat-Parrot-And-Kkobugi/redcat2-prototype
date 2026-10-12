@@ -64,6 +64,43 @@ thing a fresh instance reads to understand *why* the board looks the way it does
 rewrite history here — append. **Timestamp every entry in UTC** (`date -u +%FT%TZ`) so the
 journal, the tool logs, and the retrospectives all share one clock.
 
+### `ledger.json` — the machine-readable mirror (the harness enforces on THIS)
+
+`hypotheses.md` is the human view; `ledger.json` is the same state in a form the harness can read and
+act on. They must agree — when they drift, **`ledger.json` is authoritative for automation**. Update it
+**every loop, right after you update the board**. It is small and it is *yours* (your "intent"). The
+harness keeps a **separate** `logs/accounting.json` of counters — how many times each hypothesis was
+tried, whether progress is moving, override spend — that **you must never write**; leave it to the hook.
+Keeping your intent (`ledger.json`) and the hook's accounting in different files is deliberate: a
+malformed hand-edit of yours can never corrupt the counters the harness relies on.
+
+Shape (create it if missing — `H<n>` keys mirror the board exactly):
+```json
+{
+  "schema": 1,
+  "updated_utc": "<date -u +%FT%TZ>",
+  "current_hypothesis": "H3",
+  "hypotheses": {
+    "H3": { "claim": "<one line, same as the board>", "target": "<service/host/primitive it attacks>",
+            "status": "open|testing|confirmed|refuted|frozen", "budget_max": 8,
+            "freeze": { "frozen": false, "confidence": "low|med|high", "reason": "",
+                        "by": "self", "resumable": true, "at": "" } }
+  },
+  "confirmed_path": [
+    { "h": "H2", "summary": "worker RCE via unsafe yaml.load -> shell as worker", "at": "<utc>" }
+  ]
+}
+```
+Rules: **(1)** `current_hypothesis` always names the block you are pursuing *right now* — the hook
+counts your experiments against it. **(2)** On a VERIFY-confirmed flag or step, append one
+`confirmed_path` entry — one clean sentence a reader could follow; it is copied **live** into
+`writeup.md`, so this is how the solve chain is built as you go, not at the end. **(3)** When you
+freeze a hypothesis, set `freeze.frozen=true` with an **honest** `confidence` and a one-line `reason`:
+a `low`/`med` freeze may be thawed later if a new fact revives it, a `high` one should not be reopened
+without strong new evidence. `by` is `self` unless an overseer/arbiter set it. **Never** record here —
+or in `confirmed_path` — a win that VERIFY has not confirmed (the same evidence discipline as
+`worldmodel.md`).
+
 ## Raw artifacts (not memory — evidence)
 
 Keep full, unsummarized output on disk, organized so you can find it again:
