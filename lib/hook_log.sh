@@ -57,6 +57,25 @@ rc2_fp() {
   printf '%s|%s' "$tool" "$body" | md5sum | cut -c1-16
 }
 
+# _hook_surface <command> — coarse domain label for this action, so accounting can flag a lopsided
+# effort distribution (one surface hammered 200x while another got 1 glance = an under-explored surface
+# the surrender gate should re-open). Best-effort; unknown -> "other".
+_hook_surface() {
+  local c; c="$(printf '%s' "$1" | tr 'A-Z' 'a-z')"
+  [ -z "$c" ] && { echo other; return; }
+  if   printf '%s' "$c" | grep -qE 'codebuild'; then echo codebuild
+  elif printf '%s' "$c" | grep -qE 'ecs|run-task|task-def|register-task'; then echo ecs
+  elif printf '%s' "$c" | grep -qE 'lambda|invoke'; then echo lambda
+  elif printf '%s' "$c" | grep -qE 'sqs|send-message|receive-message|queue'; then echo sqs
+  elif printf '%s' "$c" | grep -qE 's3|get-object|put-object|create-bucket'; then echo s3
+  elif printf '%s' "$c" | grep -qE 'ssm|secretsmanager|dynamodb|get-parameter|get-secret'; then echo secretstore
+  elif printf '%s' "$c" | grep -qE 'iam|sts |assume-role|get-caller'; then echo iam
+  elif printf '%s' "$c" | grep -qE '(^|[^a-z])ssh|sshpass|scp |hydra|kerbrute'; then echo ssh
+  elif printf '%s' "$c" | grep -qE 'nmap|masscan|rustscan|gobuster|ffuf|feroxbuster|nuclei|nikto|wpscan'; then echo recon
+  elif printf '%s' "$c" | grep -qE 'curl|wget|http|(^|[^a-z])nc |ncat'; then echo web
+  else echo other; fi
+}
+
 # rc2_guard_msg <reason> <hypo> <exp> <ceil> <rep> — structured message to the agent (point 7: echoes
 # the action it was about to take + the ledger snapshot + the concrete alternatives).
 rc2_guard_msg() {
@@ -113,14 +132,16 @@ rc2_guard_pre() {
     fi
   fi
 
+  local surf; surf="$(_hook_surface "$(printf '%s' "$input" | jq -r '.tool_input.command // (.tool_name) // ""' 2>/dev/null)")"
   rc2_json_update "$ACCT" \
      '.global.experiments=((.global.experiments // 0)+1)
       | .per_hypothesis[$h]=((.per_hypothesis[$h] // {spent:0,repeat_count:0})
           | .spent=((.spent // 0)+1)
           | .repeat_count=(if (.last_action_fp // "")==$fp then ((.repeat_count // 0)+1) else 1 end)
           | .last_action_fp=$fp | .last_utc=(now|todate))
+      | .surfaces[$surf]=((.surfaces[$surf] // 0)+1)
       | .updated_utc=(now|todate)' \
-     --arg h "$cur" --arg fp "$fp"
+     --arg h "$cur" --arg fp "$fp" --arg surf "$surf"
   return 0
 }
 

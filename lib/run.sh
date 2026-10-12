@@ -46,6 +46,8 @@ ENV
 
 ## Access held
 - (none yet)
+## Privilege map
+- target: unknown principals/services — map who runs ABOVE you and what input of yours reaches them (elevation candidates)
 ## Credentials
 - (none yet)
 ## Services & versions
@@ -107,7 +109,8 @@ JSON
   "consumed_overrides": [],
   "freeze_candidate": null,
   "arbiter_freezes": {},
-  "judge": { "last_experiment": {} }
+  "judge": { "last_experiment": {} },
+  "surfaces": {}
 }
 JSON
   echo "$RUNDIR"
@@ -173,7 +176,7 @@ rc2_relaunch_target_line() {
 _rc2_log_has_cyber() { tail -n 60 "${1:-/dev/null}" 2>/dev/null | grep -qiE 'safeguards flagged|\[cyber\]|Cyber Verification|cyber safeguard'; }
 
 rc2_run_loop() {
-  local attempt=0 rc cyber_tries=0
+  local attempt=0 rc cyber_tries=0 surrender_reopens=0
   local PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
   while :; do
     attempt=$((attempt+1))
@@ -204,7 +207,28 @@ rc2_run_loop() {
       fi
       printf '\033[33m[hunt] agent hit a cyber safeguard — relaunching a fresh session (%d/%s)\033[0m\n' "$cyber_tries" "${CYBER_MAX_RETRIES:-3}" | tee -a "$LOG"; sleep 3; continue
     fi
-    if [ "$rc" -eq 0 ]; then echo "[hunt] agent stopped cleanly without both flags (blocker/stuck). Respecting it — not relaunching. Re-run ./hunt $TARGET to continue." | tee -a "$LOG"; break; fi
+    if [ "$rc" -eq 0 ]; then
+      # C (surrender gate): before respecting a clean-exit blocker, let an independent reviewer
+      # re-audit the pruned/weak negatives. A concrete REOPEN relaunches with that directive; bounded.
+      if _rc2_surrender_on && [ "$surrender_reopens" -lt "${RC2_SURRENDER_MAX:-2}" ]; then
+        local sv verdict comp prim rsn
+        printf '\033[36m[surrender-gate] agent declared a blocker — independent re-audit (%s) ...\033[0m\n' "${RC2_SURRENDER_MODEL:-opus}" | tee -a "$LOG"
+        sv="$(rc2_surrender_gate "$RUNDIR")"
+        verdict="$(printf '%s' "$sv" | jq -r '.verdict // "ACCEPT"' 2>/dev/null)"
+        if [ "$verdict" = "REOPEN" ]; then
+          comp="$(printf '%s' "$sv" | jq -r '.component // "?"' 2>/dev/null)"
+          prim="$(printf '%s' "$sv" | jq -r '.primitive // "?"' 2>/dev/null)"
+          rsn="$(printf '%s' "$sv" | jq -r '.reason // ""' 2>/dev/null)"
+          if [ -n "$comp" ] && [ "$comp" != "?" ]; then
+            rc2_surrender_directive "$RUNDIR" "$comp" "$prim" "$rsn"
+            surrender_reopens=$((surrender_reopens+1))
+            printf '\033[31m[surrender-gate] REOPEN %d/%s: %s via %s — relaunching\033[0m\n' "$surrender_reopens" "${RC2_SURRENDER_MAX:-2}" "$comp" "$prim" | tee -a "$LOG"; sleep 3; continue
+          fi
+        fi
+        echo "[surrender-gate] ACCEPT — surrender is real (no under-tested higher-privilege re-open found)." | tee -a "$LOG"
+      fi
+      echo "[hunt] agent stopped cleanly without both flags (blocker/stuck). Respecting it — not relaunching. Re-run ./hunt $TARGET to continue." | tee -a "$LOG"; break
+    fi
     if [ "$attempt" -ge "$MAX_RESTARTS" ]; then echo "[hunt] hit MAX_RESTARTS=$MAX_RESTARTS (last rc=$rc) — stopping." | tee -a "$LOG"; break; fi
     printf '\033[31m[hunt] agent exited rc=%s (crash/overflow) — will relaunch\033[0m\n' "$rc" | tee -a "$LOG"; sleep 3
   done
@@ -287,6 +311,7 @@ rc2_write_status() {
       jq -r '"- experiments: \(.global.experiments)/\(.global.ceiling) (warn@\(.global.warn_at)) · overrides: \(.global.overrides_used) · stall: \((.global.experiments // 0) - (.progress.last_progress_experiment // 0)) since last fact"
              + (if .freeze_candidate then "  ⚠️ freeze-candidate: \(.freeze_candidate.hypothesis)" else "" end)' "$L/accounting.json" 2>/dev/null || true
       jq -r '.per_hypothesis | to_entries[]? | "  - \(.key): spent=\(.value.spent) repeat=\(.value.repeat_count)"' "$L/accounting.json" 2>/dev/null || true
+      jq -r '(.surfaces // {}) | to_entries | sort_by(-.value) | if length>0 then "  - surfaces: " + ([.[] | "\(.key):\(.value)"] | join("  ")) else empty end' "$L/accounting.json" 2>/dev/null || true
     fi
     echo
     echo "## journal (recent)"; tail -15 "$rundir/journal.md" 2>/dev/null | sed 's/^/  /'
@@ -392,6 +417,58 @@ rc2_guard_watcher() {
       fi
     fi
   done
+}
+
+# ── C: surrender gate ────────────────────────────────────────────────────────
+# When the solver clean-exits as a blocker, an INDEPENDENT reviewer (opus) re-audits its privilege
+# map + weak negatives + per-surface effort and either ACCEPTs the surrender or names a concrete
+# REOPEN (component + elevation primitive). Mirror of the rabbit-hole guard: that stops over-drilling,
+# this stops premature give-up. Runs OUTSIDE the repo (no repo-local hook). Fail-open.
+_rc2_surrender_on() {
+  [ "${NO_SURRENDER:-0}" = "1" ] && return 1
+  [ "${RC2_GUARD:-off}" != "off" ] || [ "${RC2_GUARD_WATCH:-0}" = "1" ] || [ "${RC2_GATE:-0}" = "1" ]
+}
+
+# rc2_surrender_gate <rundir> — echoes the reviewer's verdict JSON (or nothing).
+rc2_surrender_gate() {
+  local rundir="$1" model="${RC2_SURRENDER_MODEL:-opus}" sys prompt jcwd out wm negs surf blocker
+  wm="$(sed -n '/## Privilege map/,/## Open questions/p' "$rundir/worldmodel.md" 2>/dev/null | head -60)"
+  [ -n "$wm" ] || wm="$(head -80 "$rundir/worldmodel.md" 2>/dev/null)"
+  negs="$(grep -iE 'closed|refuted|mock|not present|no .*(sock|mount|priv)|dropped|denied|impossible' "$rundir/worldmodel.md" "$rundir/hypotheses.md" 2>/dev/null | cut -c1-220 | head -40)"
+  surf="$(jq -r '.surfaces // {} | to_entries[]? | "  \(.key): \(.value)"' "$rundir/logs/accounting.json" 2>/dev/null | sort -t: -k2 -rn | head -20)"
+  blocker="$(tail -40 "$rundir/journal.md" 2>/dev/null)"
+  sys="$(cat "$RC2_ROOT/SURRENDER.md" 2>/dev/null)"
+  prompt="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s' \
+    "The solver declared a BLOCKER (no root). Re-audit before the surrender is accepted." \
+    "PRIVILEGE MAP + facts:" "$wm" \
+    "Recorded NEGATIVES (look for thinly-tested ones that could run above the agent):" "$negs" \
+    "PER-SURFACE effort (calls; lopsided = under-explored surface):" "${surf:-  (none recorded)}" \
+    "Blocker note (journal tail):" "$blocker")"
+  jcwd="$(mktemp -d "${GUARD_JUDGE_TMP:-/tmp}/rc2surr.XXXXXX" 2>/dev/null)" || return 0
+  out="$( cd "$jcwd" && timeout "${RC2_SURRENDER_TIMEOUT:-180}" claude -p "$prompt" --model "$model" --dangerously-skip-permissions ${sys:+--append-system-prompt "$sys"} 2>/dev/null )"
+  rm -rf "$jcwd" 2>/dev/null || true
+  printf '%s' "$out" | grep -oE '\{[^{}]*"verdict"[^{}]*\}' | head -1
+}
+
+# rc2_surrender_directive <rundir> <component> <primitive> <reason> — relay a REOPEN to the solver by
+# bumping supervisor.md's tick (the solver already follows a newer SUPERVISOR_TICK; doctrine 00/10).
+rc2_surrender_directive() {
+  local rundir="$1" comp="$2" prim="$3" reason="$4" ts cur new
+  local sup="$rundir/supervisor.md"
+  ts="$(rc2_utc)"
+  cur="$(grep -oE '^SUPERVISOR_TICK: [0-9]+' "$sup" 2>/dev/null | grep -oE '[0-9]+' | head -1)"; cur="${cur:-0}"; new=$((cur+1))
+  { echo "SUPERVISOR_TICK: $new   ($ts · surrender-gate)"
+    echo "# operator-level reviewer (auto). SOLVER: act ONLY when SUPERVISOR_TICK changed since you last followed it; then follow STOP / DO NEXT (overrides your own 'dead end')."
+    echo "_surrender gate rejected the blocker — a negative you pruned was under-tested_"
+    echo
+    echo "STATUS: rabbit-hole"
+    echo "FOCUS: reopen-$comp"
+    echo "READ: you declared a blocker, but '$comp' was dismissed on thin evidence and could run at a higher privilege than you."
+    echo "GOOD: you did thoroughly refute the paths you actually tested."
+    echo "STOP: accepting the blocker; stop treating '$comp' as closed."
+    echo "DO NEXT: RE-OPEN $comp — try the elevation primitive: $prim. $reason. Record the result as a depth-tested negative or a new elevation path; do NOT re-drill paths already disproven to depth."
+  } > "$sup" 2>/dev/null || true
+  printf '%s surrender-gate REOPEN %s via %s: %s\n' "$ts" "$comp" "$prim" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
 }
 
 # ── side process: supervisor (oversee), placed per the runtime ───────────────

@@ -39,10 +39,17 @@ which is the normal case on Insane — you research, improvise, and build what's
    - `out-of-scope` — explicitly off-limits → never touch.
    Pulling data *from* the public internet (research, exploit code, wordlists) is always fine;
    *attacking* anything not tagged in-scope/conditional is forbidden.
-2. **Evidence over belief.** A command running is not a result. A result is a change
-   in what you can *prove* about the target. Never record a win you cannot demonstrate,
-   and never move on from a claim ("I have a shell", "this cred is valid", "this is the
-   flag") until an independent check confirms it. See `doctrine/10-hunt-loop.md` → VERIFY.
+2. **Evidence over belief — and this cuts both ways.** A command running is not a result. A
+   result is a change in what you can *prove* about the target. Never record a win you cannot
+   demonstrate, and never move on from a claim ("I have a shell", "this cred is valid", "this is
+   the flag") until an independent check confirms it. **The same rigour applies to a *negative*:**
+   "X is closed / a mock / not present / refuted" is itself a claim, and **absence of evidence is
+   not evidence of absence**. A negative is only a *fact* when you have tested the thing it would
+   block to adequate depth; a shallow glance ("the build finished fast so it's a mock", "the easy
+   escape didn't fire") is a **hypothesis**, not a fact — record it as such, with how deeply you
+   looked and your confidence (see `40-memory-and-state.md`). Shallow negatives silently prune the
+   real path from your search space; that is how a solvable box gets wrongly declared blocked. See
+   `doctrine/10-hunt-loop.md` → VERIFY.
 3. **No grinding.** If a line of attack produces no new evidence after its budget of
    attempts, you *freeze* it, write down why, and switch. Escalating complexity with no
    evidence movement is the signature of a rabbit hole — the correct response is to zoom
@@ -74,3 +81,12 @@ to `flags.txt`, and emitted as `<FLAG>value</FLAG>`. If you become genuinely, ev
 stuck — not bored, *stuck*, with every live hypothesis refuted and no new surface — write a
 precise blocker note in `journal.md` (what you proved, what you ruled out, what you'd try
 with more information) and stop. Do not fabricate progress to avoid stopping.
+
+**Before you declare a blocker, re-audit your own negatives.** "Stuck" is only real once the
+weakest-supported entries in your privilege map and your `refuted`/`closed` facts have been
+re-opened and re-tested — especially any component you dismissed shallowly that could run at a
+higher privilege than you (per `10-hunt-loop.md` → the privilege delta). Most "blocked" boxes are
+not out of surface; they are out of surface *you were willing to re-examine*. List each ruled-out
+item **with how deeply you actually tested it**, and if the deepest test behind a load-bearing
+negative was thin, that is a lead to re-open, not a blocker. (The harness may run an independent
+surrender-gate that re-opens such a negative and relaunches you — treat that as a real directive.)
