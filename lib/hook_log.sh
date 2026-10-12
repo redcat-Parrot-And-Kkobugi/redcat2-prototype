@@ -15,6 +15,8 @@ cwd="$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)"
 [ -n "$cwd" ] || cwd="${CLAUDE_PROJECT_DIR:-$PWD}"
 logdir="$cwd/logs"; mkdir -p "$logdir/raw" 2>/dev/null
 jsonl="$logdir/tools.jsonl"
+# shared guard/JSON helpers (dependency-free; guarded so a missing/broken lib never breaks the hook)
+. "$(dirname "$0")/guard_lib.sh" 2>/dev/null || true
 ts="$(date -u +%Y%m%dT%H%M%S.%3N 2>/dev/null || date +%s)"   # UTC, to match status.md / analyze / journal
 
 # Guarded = expensive/noisy target actions; exempt = shell listeners (re-run freely).
@@ -28,30 +30,18 @@ is_guarded(){ [ -n "$1" ] && ! printf '%s' "$1" | grep -qiE "$EXEMPT_RE" && prin
 # thresholds can be calibrated. Gating (warn/block) is opt-in: RC2_GUARD=off (default) | warn | block.
 # This is the "accounting" half of the intent/accounting split: the agent owns ledger.json, the hook
 # owns accounting.json and never trusts the agent's hand-written JSON for its counters.
-# Effective guard mode = the STRONGER of two tiers: the operator's FLOOR (RC2_GUARD env — the solver
-# and the supervisor cannot go below it) and the supervisor's LIVE level (logs/guard.mode, honoured
-# only if its tag matches logs/.guard_secret, a dotfile the solver is forbidden to read). off<warn<block.
-_mode_rank(){ case "$1" in block) echo 3;; warn) echo 2;; *) echo 1;; esac; }
-rc2_effective_guard(){
-  local floor="${RC2_GUARD:-off}" live="off" gm="$logdir/guard.mode" sec="$logdir/.guard_secret" m t want
-  case "$floor" in off|warn|block) ;; *) floor=off;; esac
-  if [ -s "$gm" ] && [ -s "$sec" ]; then
-    m="$(sed -n 's/^mode=//p' "$gm" 2>/dev/null | head -1 | tr -cd 'a-z')"
-    t="$(sed -n 's/^tag=//p'  "$gm" 2>/dev/null | head -1 | tr -cd '0-9a-f')"
-    want="$(printf '%s%s' "$m" "$(cat "$sec" 2>/dev/null)" | md5sum 2>/dev/null | cut -c1-32)"
-    [ -n "$m" ] && [ -n "$t" ] && [ "$t" = "$want" ] && case "$m" in off|warn|block) live="$m";; esac
-  fi
-  if [ "$(_mode_rank "$live")" -gt "$(_mode_rank "$floor")" ]; then echo "$live"; else echo "$floor"; fi
-}
-GUARD_MODE="$(rc2_effective_guard)"
+# effective mode = floor(RC2_GUARD env) ⊔ live(logs/guard.mode, tag-checked); see guard_lib.sh
+GUARD_MODE="$(rc2_guard_effective "$cwd")"
 LEDGER="$cwd/ledger.json"
 ACCT="$logdir/accounting.json"
-REPEAT_FREEZE="${RC2_REPEAT_FREEZE:-4}"
+REPEAT_FREEZE="${RC2_REPEAT_FREEZE:-4}"   # default lives in env.sh; this is the detached-hook fallback
 
-# rc2_fp <input-json> — a conservative "shape" of this call: same target action with a different
-# payload hashes the same (so a reworded retry counts as a repeat), but a different command/tool/
-# approach hashes differently (so genuine variation is NOT counted). The sonnet sameness-judge (next
-# sub-phase) refines the hard cases; this is the cheap per-call proxy.
+# rc2_fp <input-json> — a conservative "shape" of this call for LITERAL-repeat detection only: a
+# reworded/re-payloaded retry of the same command hashes the same, a different command/tool hashes
+# differently. This is deliberately NOT the semantic sameness signal — judging whether textually-varied
+# or Task-delegated work is "the same disproven approach" is done out-of-band by the sonnet/haiku judge
+# (rc2_guard_watcher, stall-triggered, fingerprint-independent). Per-call model calls are not viable in
+# the hook (cost + latency on every action), so the hook stays cheap and the judge does the thinking.
 rc2_fp() {
   local ip tool cmd body
   ip="$( [ -f "$cwd/target.env" ] && . "$cwd/target.env" 2>/dev/null; printf '%s' "${target_ip:-}")"
@@ -73,7 +63,7 @@ rc2_guard_msg() {
   local bc; bc="$(printf '%s' "$input" | jq -r '.tool_input.command // (.tool_name) // "?"' 2>/dev/null | tr -s ' \t\n' ' ' | cut -c1-160)"
   {
     echo "redcat2 guard [$GUARD_MODE]: $1."
-    echo "  ledger: current=$2  experiments=$3/$4  repeat_on_$2=$5   (solved runs here finished in ~186-416 calls)"
+    echo "  ledger: current=$2  experiments=$3/$4  repeat_on_$2=$5"
     echo "  you were about to run: $bc"
     echo "  DO ONE OF: (a) a MATERIALLY different attempt — new vector/tool/assumption, not a reworded retry;"
     echo "     (b) FREEZE $2: in ledger.json set .hypotheses.$2.freeze.frozen=true with an honest confidence + one-line reason, then switch to another hypothesis;"
@@ -86,10 +76,8 @@ rc2_guard_pre() {
   [ -s "$LEDGER" ] && [ -s "$ACCT" ] || return 0        # ledger-based model not in use -> no-op
   local cur frozen fp exp ceil warn last_fp prev_rep new_rep
   cur="$(jq -r '.current_hypothesis // empty' "$LEDGER" 2>/dev/null)"; [ -n "$cur" ] || cur="unassigned"
-  frozen="$(jq -r --arg h "$cur" '.hypotheses[$h].freeze.frozen // false' "$LEDGER" 2>/dev/null)"
-  # an arbiter freeze (set by the independent judge, in the hook-owned accounting file) also counts and
-  # the solver cannot clear it by editing its own ledger.json
-  [ "$frozen" = "true" ] || { [ -n "$(jq -r --arg h "$cur" '.arbiter_freezes[$h] // empty' "$ACCT" 2>/dev/null)" ] && frozen=true; }
+  # frozen = solver's own freeze (ledger) OR an arbiter freeze (accounting, solver cannot clear) — guard_lib
+  frozen=false; rc2_is_frozen "$cwd" "$cur" && frozen=true
   fp="$(rc2_fp "$input")"
   exp="$(jq -r '.global.experiments // 0' "$ACCT" 2>/dev/null)"
   ceil="$(jq -r '.global.ceiling // 999999' "$ACCT" 2>/dev/null)"
@@ -111,12 +99,12 @@ rc2_guard_pre() {
       ov_reason="$(jq -r '.override.reason // empty' "$LEDGER" 2>/dev/null)"
       consumed="$(jq -r --arg n "$ov_nonce" '.consumed_overrides // [] | index($n)' "$ACCT" 2>/dev/null)"
       if [ -n "$ov_nonce" ] && [ "$ov_h" = "$cur" ] && [ "$consumed" = "null" ]; then
-        jq --arg n "$ov_nonce" '.consumed_overrides=((.consumed_overrides // [])+[$n]) | .global.overrides_used=((.global.overrides_used // 0)+1)' "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+        rc2_json_update "$ACCT" '.consumed_overrides=((.consumed_overrides // [])+[$n]) | .global.overrides_used=((.global.overrides_used // 0)+1)' --arg n "$ov_nonce"
         echo "redcat2 guard: OVERRIDE consumed for $cur (reason: ${ov_reason:-none}) — allowed ONCE. [$reason] Repeated overrides on $cur will require arbiter sign-off." >&2
       else
         rc2_guard_msg "$reason" "$cur" "$exp" "$ceil" "$new_rep"
         if [ "$GUARD_MODE" = "block" ]; then
-          jq --arg h "$cur" '.freeze_candidate={hypothesis:$h, reason:"repeat/stall/frozen", at:(now|todate)}' "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+          rc2_json_update "$ACCT" '.freeze_candidate={hypothesis:$h, reason:"repeat/stall/frozen", at:(now|todate)}' --arg h "$cur"
           return 2
         fi
       fi
@@ -125,14 +113,14 @@ rc2_guard_pre() {
     fi
   fi
 
-  jq --arg h "$cur" --arg fp "$fp" \
+  rc2_json_update "$ACCT" \
      '.global.experiments=((.global.experiments // 0)+1)
       | .per_hypothesis[$h]=((.per_hypothesis[$h] // {spent:0,repeat_count:0})
           | .spent=((.spent // 0)+1)
           | .repeat_count=(if (.last_action_fp // "")==$fp then ((.repeat_count // 0)+1) else 1 end)
           | .last_action_fp=$fp | .last_utc=(now|todate))
       | .updated_utc=(now|todate)' \
-     "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+     --arg h "$cur" --arg fp "$fp"
   return 0
 }
 
@@ -200,13 +188,17 @@ printf '%s' "$input" | jq -c --arg ts "$ts" --arg of "$outfile" --arg b "${bytes
       out_bytes:($b|tonumber), out_file:$of}' \
   >> "$jsonl" 2>/dev/null
 
-# P1 progress signal: did worldmodel.md gain content since the last recorded fact-change? If so,
-# stamp progress (resets the stall clock the guard/analysis read). Cheap hash; fail-open.
-if [ -s "$ACCT" ] && [ -f "$cwd/worldmodel.md" ]; then
-  wmfp="$(md5sum "$cwd/worldmodel.md" 2>/dev/null | cut -c1-16)"
+# P1 progress signal (G1: "evidence movement", not just worldmodel) — composite of worldmodel.md
+# content + confirmed_path length + loot file count. Any of them moving = progress -> stamp it, which
+# resets the stall clock the watcher/guard read. Cheap; fail-open.
+if [ -s "$ACCT" ]; then
+  wm="$(md5sum "$cwd/worldmodel.md" 2>/dev/null | cut -c1-16)"
+  cp="$(jq -r '.confirmed_path | length' "$cwd/ledger.json" 2>/dev/null)"; cp="${cp:-0}"
+  loot="$(find "$cwd/loot" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  sig="${wm:-0}:${cp}:${loot:-0}"
   pfp="$(jq -r '.progress.last_progress_fp // empty' "$ACCT" 2>/dev/null)"
-  if [ -n "$wmfp" ] && [ "$wmfp" != "$pfp" ]; then
-    jq --arg f "$wmfp" '.progress.last_progress_fp=$f | .progress.last_progress_utc=(now|todate) | .progress.last_progress_experiment=(.global.experiments // 0) | .progress.stale_ticks=0' "$ACCT" > "$ACCT.tmp" 2>/dev/null && mv "$ACCT.tmp" "$ACCT" 2>/dev/null
+  if [ "$sig" != "$pfp" ]; then
+    rc2_json_update "$ACCT" '.progress.last_progress_fp=$f | .progress.last_progress_utc=(now|todate) | .progress.last_progress_experiment=(.global.experiments // 0) | .progress.stale_ticks=0' --arg f "$sig"
   fi
 fi
 exit 0

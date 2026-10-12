@@ -6,6 +6,9 @@
 #  and the flag helpers (RC2_FLAG_RE, rc2_flag_value, rc2_hex_in, rc2_both_flags).
 # =============================================================================
 
+# minimal, dependency-free guard/JSON helpers (also sourced directly by the standalone hook)
+. "$(dirname "${BASH_SOURCE[0]}")/guard_lib.sh" 2>/dev/null || true
+
 # ANSI colors (plain; harmless when redirected)
 g=$'\033[32m'; r=$'\033[31m'; y=$'\033[33m'; c=$'\033[36m'; d=$'\033[2m'; n=$'\033[0m'
 

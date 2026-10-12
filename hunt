@@ -66,7 +66,10 @@ rc2_flag_watcher "$RUNDIR" & FLAG_WATCH_PID=$!
 # background status snapshotter: rewrites status.md every STATUS_INTERVAL (default 600s)
 rc2_status_writer "$RUNDIR" & STATUS_PID=$!
 # background sameness-judge watcher (P1-d): an independent judge freezes a hypothesis ruled a rabbit
-# hole. Runs when enforcement is enabled (RC2_GUARD!=off) or RC2_GUARD_WATCH=1; NO_GUARD_WATCH=1 forces off.
+# hole. Runs when enforcement is enabled (RC2_GUARD!=off) or RC2_GUARD_WATCH=1 or RC2_GATE=1; NO_GUARD_WATCH=1 forces off.
+# R5 (intentional): this predicate is deliberately WIDER than oversee's gate predicate — RC2_GUARD is the
+# operator's minimum FLOOR, RC2_GUARD_WATCH is judge-only (freeze, no live gate), RC2_GATE enables oversee's
+# LIVE escalation. The watcher should run whenever ANY of those automation layers is active.
 GUARD_WATCH_PID=""
 if { [ "${RC2_GUARD:-off}" != "off" ] || [ "${RC2_GUARD_WATCH:-0}" = "1" ] || [ "${RC2_GATE:-0}" = "1" ]; } && [ "${NO_GUARD_WATCH:-0}" != "1" ]; then
   rc2_guard_watcher "$RUNDIR" & GUARD_WATCH_PID=$!
