@@ -54,3 +54,17 @@ rc2_to_epoch() {
   dd="${t%T*}"; cc="${t#*T}"
   date -d "${dd:0:4}-${dd:4:2}-${dd:6:2} ${cc:0:2}:${cc:2:2}:${cc:4:2}" +%s 2>/dev/null || echo 0
 }
+
+# rc2_write_supervisor <rundir> <tag> <body> — write supervisor.md with a bumped SUPERVISOR_TICK and the
+# canonical reviewer-instruction header, then <body> (the caller's subtitle + verdict). One home for the
+# tick-bump + header format, shared by oversee.sh and the surrender gate. Echoes the new tick number.
+rc2_write_supervisor() {
+  local rundir="$1" tag="$2" body="$3" sup="$1/supervisor.md" ts cur new
+  ts="$(rc2_utc)"
+  cur="$(grep -oE '^SUPERVISOR_TICK: [0-9]+' "$sup" 2>/dev/null | grep -oE '[0-9]+' | head -1)"; cur="${cur:-0}"; new=$((cur+1))
+  { printf 'SUPERVISOR_TICK: %s   (%s · %s)\n' "$new" "$ts" "$tag"
+    echo "# operator-level reviewer (auto). SOLVER: act ONLY when SUPERVISOR_TICK changed since you last followed it; then follow STOP / DO NEXT (operator priority, overrides your own 'dead end' conclusions). A new tick means: course-correct now."
+    printf '%s\n' "$body"
+  } > "$sup" 2>/dev/null || true
+  echo "$new"
+}

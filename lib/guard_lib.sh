@@ -66,3 +66,9 @@ rc2_is_frozen() {
   [ -n "$(jq -r --arg h "$h" '.arbiter_freezes[$h] // empty' "$acct" 2>/dev/null)" ] && return 0
   return 1
 }
+
+# rc2_guard_core_on — true if a guard ENFORCEMENT layer is active: an operator floor (RC2_GUARD!=off)
+# or the oversee live-gate (RC2_GATE=1). Callers that also run on the judge-only watcher add
+# `|| RC2_GUARD_WATCH=1` plus their own NO_* opt-out; oversee's gate predicate is exactly this core
+# (it deliberately omits GUARD_WATCH — watch is judge-only and must not arm the live gate).
+rc2_guard_core_on() { [ "${RC2_GUARD:-off}" != "off" ] || [ "${RC2_GATE:-0}" = "1" ]; }

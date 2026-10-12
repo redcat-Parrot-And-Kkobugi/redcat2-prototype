@@ -59,7 +59,7 @@ mkdir -p "$RUNDIR/logs"
 # R5 (intentional, not a bug): this predicate decides whether OVERSEE may move the LIVE tier. It is
 # NOT the same as hunt's watcher predicate — hunt also honours RC2_GUARD_WATCH (judge-only, no gate).
 # Here: the gate is on if the operator set any floor (RC2_GUARD!=off) or explicitly opted in (RC2_GATE=1).
-GATE="${RC2_GATE:-0}"; [ "${RC2_GUARD:-off}" != "off" ] && GATE=1
+GATE=0; rc2_guard_core_on && GATE=1   # core = floor(RC2_GUARD!=off) or RC2_GATE=1 (guard_lib; see note there)
 GATE_N="${RC2_GATE_N:-2}"
 GATE_MODE="${RC2_GATE_MODE:-block}"
 
@@ -205,13 +205,7 @@ assess(){
     return 0
   fi
 
-  cur="$(grep -oE '^SUPERVISOR_TICK: [0-9]+' "$SUP" 2>/dev/null | grep -oE '[0-9]+' | head -1)"; cur="${cur:-0}"; new=$((cur+1))
-  { echo "SUPERVISOR_TICK: $new   ($ts · $status)"
-    echo "# operator-level reviewer (auto). SOLVER: act ONLY when SUPERVISOR_TICK changed since you last followed it; then follow STOP / DO NEXT (operator priority, overrides your own 'dead end' conclusions). A new tick means: course-correct now."
-    echo "_review #$rev · model=${MODEL}_"
-    echo
-    printf '%s\n' "$verdict"
-  } > "$SUP"
+  new="$(rc2_write_supervisor "$RUNDIR" "$status" "$(printf '_review #%s · model=%s_\n\n%s' "$rev" "$MODEL" "$verdict")")"
   local tag="${y}minor-drift${n}"; [ "$status" = "rabbit-hole" ] && tag="${r}RABBIT-HOLE${n}"
   echo "   ${tag} → wrote supervisor.md (SUPERVISOR_TICK $new)"
   printf '%s\n' "$verdict" | sed -n '1,14p' | sed 's/^/   /'

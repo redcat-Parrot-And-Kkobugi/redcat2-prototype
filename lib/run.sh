@@ -348,15 +348,27 @@ rc2_status_writer() {
 # Independent of the solver (its own `claude -p`, run OUTSIDE the repo so no repo-local hook fires), so
 # the solver cannot bias it. Fail-open throughout.
 
+# rc2_claude_oneshot <model> <sysfile|""> <timeout> <prompt> — run an out-of-band `claude -p` from an
+# isolated cwd OUTSIDE the repo (so no repo-local hook / auto-PR Stop hook fires), permissionless, with
+# an optional --append-system-prompt file, bounded by <timeout>. Echoes raw stdout; empty on error.
+# Shared by the sameness judge and the surrender gate — one home for the repo-isolation safety.
+rc2_claude_oneshot() {
+  local model="$1" sysfile="$2" tmo="$3" prompt="$4" jcwd out sys=""
+  [ -n "$sysfile" ] && [ -f "$sysfile" ] && sys="$(cat "$sysfile" 2>/dev/null)"
+  jcwd="$(mktemp -d "${GUARD_JUDGE_TMP:-/tmp}/rc2oneshot.XXXXXX" 2>/dev/null)" || return 0
+  out="$( cd "$jcwd" && timeout "$tmo" claude -p "$prompt" --model "$model" --dangerously-skip-permissions ${sys:+--append-system-prompt "$sys"} 2>/dev/null )"
+  rm -rf "$jcwd" 2>/dev/null || true
+  printf '%s' "$out"
+}
+
 # rc2_run_sameness_judge <rundir> <hypo> — echoes the judge's one-line verdict JSON (or nothing).
 rc2_run_sameness_judge() {
   local rundir="$1" h="$2" led="$rundir/ledger.json" J="$rundir/logs/tools.jsonl"
-  local claim target recent wm sys model="${GUARD_JUDGE_MODEL:-sonnet}" jcwd out prompt
+  local claim target recent wm model="${GUARD_JUDGE_MODEL:-sonnet}" prompt
   claim="$(jq -r --arg h "$h" '.hypotheses[$h].claim // "?"' "$led" 2>/dev/null)"
   target="$(jq -r --arg h "$h" '.hypotheses[$h].target // "?"' "$led" 2>/dev/null)"
   recent="$(grep '"event":"pre"' "$J" 2>/dev/null | tail -24 | jq -r '(.command // .tool // "?")' 2>/dev/null | cut -c1-200)"
   wm="$(tail -40 "$rundir/worldmodel.md" 2>/dev/null)"
-  sys="$(cat "$RC2_ROOT/JUDGE.md" 2>/dev/null)"
   # prompt built with printf %s so logged commands (which may contain $(), backticks) are NEVER expanded
   prompt="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s' \
     "Hypothesis under scrutiny ($h): \"$claim\"  (target: $target)." \
@@ -364,11 +376,7 @@ rc2_run_sameness_judge() {
     "Current worldmodel.md tail (VERIFIED facts only):" "$wm" \
     "Decide SAME (rabbit hole) vs VARYING (genuine exploration). Respond with ONLY the JSON object:" \
     '{"verdict":"SAME"|"VARYING","distinct_approaches":<int>,"confidence":"low"|"med"|"high","reason":"<=160 chars"}')"
-  jcwd="$(mktemp -d "${GUARD_JUDGE_TMP:-/tmp}/rc2judge.XXXXXX" 2>/dev/null)" || jcwd=""
-  [ -n "$jcwd" ] || return 0
-  out="$( cd "$jcwd" && timeout "${GUARD_JUDGE_TIMEOUT:-120}" claude -p "$prompt" --model "$model" --dangerously-skip-permissions ${sys:+--append-system-prompt "$sys"} 2>/dev/null )"
-  rm -rf "$jcwd" 2>/dev/null || true
-  printf '%s' "$out" | grep -oE '\{[^{}]*"verdict"[^{}]*\}' | head -1
+  rc2_claude_oneshot "$model" "$RC2_ROOT/JUDGE.md" "${GUARD_JUDGE_TIMEOUT:-120}" "$prompt" | grep -oE '\{[^{}]*"verdict"[^{}]*\}' | head -1
 }
 
 # rc2_guard_commit_freeze <rundir> <hypo> <confidence> <reason> — authoritative freeze in accounting
@@ -426,49 +434,40 @@ rc2_guard_watcher() {
 # this stops premature give-up. Runs OUTSIDE the repo (no repo-local hook). Fail-open.
 _rc2_surrender_on() {
   [ "${NO_SURRENDER:-0}" = "1" ] && return 1
-  [ "${RC2_GUARD:-off}" != "off" ] || [ "${RC2_GUARD_WATCH:-0}" = "1" ] || [ "${RC2_GATE:-0}" = "1" ]
+  rc2_guard_core_on || [ "${RC2_GUARD_WATCH:-0}" = "1" ]   # core (floor/gate) + judge-only watcher
 }
 
 # rc2_surrender_gate <rundir> — echoes the reviewer's verdict JSON (or nothing).
 rc2_surrender_gate() {
-  local rundir="$1" model="${RC2_SURRENDER_MODEL:-opus}" sys prompt jcwd out wm negs surf blocker
+  local rundir="$1" model="${RC2_SURRENDER_MODEL:-opus}" prompt wm negs surf blocker
   wm="$(sed -n '/## Privilege map/,/## Open questions/p' "$rundir/worldmodel.md" 2>/dev/null | head -60)"
   [ -n "$wm" ] || wm="$(head -80 "$rundir/worldmodel.md" 2>/dev/null)"
   negs="$(grep -iE 'closed|refuted|mock|not present|no .*(sock|mount|priv)|dropped|denied|impossible' "$rundir/worldmodel.md" "$rundir/hypotheses.md" 2>/dev/null | cut -c1-220 | head -40)"
   surf="$(jq -r '.surfaces // {} | to_entries[]? | "  \(.key): \(.value)"' "$rundir/logs/accounting.json" 2>/dev/null | sort -t: -k2 -rn | head -20)"
   blocker="$(tail -40 "$rundir/journal.md" 2>/dev/null)"
-  sys="$(cat "$RC2_ROOT/SURRENDER.md" 2>/dev/null)"
   prompt="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s' \
     "The solver declared a BLOCKER (no root). Re-audit before the surrender is accepted." \
     "PRIVILEGE MAP + facts:" "$wm" \
     "Recorded NEGATIVES (look for thinly-tested ones that could run above the agent):" "$negs" \
     "PER-SURFACE effort (calls; lopsided = under-explored surface):" "${surf:-  (none recorded)}" \
     "Blocker note (journal tail):" "$blocker")"
-  jcwd="$(mktemp -d "${GUARD_JUDGE_TMP:-/tmp}/rc2surr.XXXXXX" 2>/dev/null)" || return 0
-  out="$( cd "$jcwd" && timeout "${RC2_SURRENDER_TIMEOUT:-180}" claude -p "$prompt" --model "$model" --dangerously-skip-permissions ${sys:+--append-system-prompt "$sys"} 2>/dev/null )"
-  rm -rf "$jcwd" 2>/dev/null || true
-  printf '%s' "$out" | grep -oE '\{[^{}]*"verdict"[^{}]*\}' | head -1
+  rc2_claude_oneshot "$model" "$RC2_ROOT/SURRENDER.md" "${RC2_SURRENDER_TIMEOUT:-180}" "$prompt" | grep -oE '\{[^{}]*"verdict"[^{}]*\}' | head -1
 }
 
 # rc2_surrender_directive <rundir> <component> <primitive> <reason> — relay a REOPEN to the solver by
 # bumping supervisor.md's tick (the solver already follows a newer SUPERVISOR_TICK; doctrine 00/10).
 rc2_surrender_directive() {
-  local rundir="$1" comp="$2" prim="$3" reason="$4" ts cur new
-  local sup="$rundir/supervisor.md"
-  ts="$(rc2_utc)"
-  cur="$(grep -oE '^SUPERVISOR_TICK: [0-9]+' "$sup" 2>/dev/null | grep -oE '[0-9]+' | head -1)"; cur="${cur:-0}"; new=$((cur+1))
-  { echo "SUPERVISOR_TICK: $new   ($ts · surrender-gate)"
-    echo "# operator-level reviewer (auto). SOLVER: act ONLY when SUPERVISOR_TICK changed since you last followed it; then follow STOP / DO NEXT (overrides your own 'dead end')."
-    echo "_surrender gate rejected the blocker — a negative you pruned was under-tested_"
-    echo
-    echo "STATUS: rabbit-hole"
-    echo "FOCUS: reopen-$comp"
-    echo "READ: you declared a blocker, but '$comp' was dismissed on thin evidence and could run at a higher privilege than you."
-    echo "GOOD: you did thoroughly refute the paths you actually tested."
-    echo "STOP: accepting the blocker; stop treating '$comp' as closed."
-    echo "DO NEXT: RE-OPEN $comp — try the elevation primitive: $prim. $reason. Record the result as a depth-tested negative or a new elevation path; do NOT re-drill paths already disproven to depth."
-  } > "$sup" 2>/dev/null || true
-  printf '%s surrender-gate REOPEN %s via %s: %s\n' "$ts" "$comp" "$prim" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
+  local rundir="$1" comp="$2" prim="$3" reason="$4" body
+  body="$(printf '%s\n\n%s\n%s\n%s\n%s\n%s\n%s' \
+    "_surrender gate rejected the blocker — a negative you pruned was under-tested_" \
+    "STATUS: rabbit-hole" \
+    "FOCUS: reopen-$comp" \
+    "READ: you declared a blocker, but '$comp' was dismissed on thin evidence and could run at a higher privilege than you." \
+    "GOOD: you did thoroughly refute the paths you actually tested." \
+    "STOP: accepting the blocker; stop treating '$comp' as closed." \
+    "DO NEXT: RE-OPEN $comp — try the elevation primitive: $prim. $reason. Record the result as a depth-tested negative or a new elevation path; do NOT re-drill paths already disproven to depth.")"
+  rc2_write_supervisor "$rundir" "surrender-gate" "$body" >/dev/null
+  printf '%s surrender-gate REOPEN %s via %s: %s\n' "$(rc2_utc)" "$comp" "$prim" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
 }
 
 # ── side process: supervisor (oversee), placed per the runtime ───────────────
