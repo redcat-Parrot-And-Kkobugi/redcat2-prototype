@@ -59,6 +59,8 @@ rc2_ensure_vpn "$target_ip" "$SUDO_A"
 export RC2_TMUX="${tmux_base}_main"
 tmux new-session -d -s "$RC2_TMUX" -x 220 -y 50 2>/dev/null || true
 
+# flag submission mode: read HTB owned-status now; pre-mark already-owned flags, else defer to end
+rc2_htb_owned_init "$RUNDIR"
 # background flag auto-submitter (returns immediately in IP-only mode)
 rc2_flag_watcher "$RUNDIR" & FLAG_WATCH_PID=$!
 # background status snapshotter: rewrites status.md every STATUS_INTERVAL (default 600s)
@@ -79,7 +81,7 @@ cleanup() {
   [ -n "${_CLEANED:-}" ] && return 0; _CLEANED=1
   [ -n "${RUN_PID:-}" ] && { pkill -TERM -P "$RUN_PID" 2>/dev/null || true; kill -TERM "$RUN_PID" 2>/dev/null || true; }
   touch "$RUNDIR/logs/.stop" 2>/dev/null || true
-  rc2_flag_scan_once "$RUNDIR" 2>/dev/null || true                 # final sweep: submit a flag captured since the last poll
+  rc2_flag_scan_once "$RUNDIR" final 2>/dev/null || true           # final sweep: submit (incl. the deferred-mode batch) any captured flag
   [ -n "${FLAG_WATCH_PID:-}" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
   [ -n "${STATUS_PID:-}" ] && kill "$STATUS_PID" 2>/dev/null || true
   [ -n "${GUARD_WATCH_PID:-}" ] && kill "$GUARD_WATCH_PID" 2>/dev/null || true

@@ -19,15 +19,39 @@ _rc2_record_flag() {
 # is left UNMARKED so the next tick retries (e.g. after hunt refreshes the token). Needs machine_id.
 _rc2_submit_flag() {
   local rundir="$1" kind="$2" val="$3" sub="$1/logs/.submitted" log="$1/logs/flag_submit.log"
-  grep -qiE "^${kind}$" "$sub" 2>/dev/null && return 0
+  grep -qiE "^${kind}$" "$sub" 2>/dev/null && return 0              # this kind already owned/accepted
+  grep -qiE "^${kind}:bad:${val}$" "$sub" 2>/dev/null && return 0   # this exact value already rejected — don't hammer the API
   local stamp resp msg; stamp="$(rc2_utc)"
   resp="$(htb_submit_flag "$machine_id" "$val" 2>/dev/null)"
   msg="$(printf '%s' "$resp" | jq -r '.message // .status // .' 2>/dev/null | head -1)"
   printf '%s SUBMIT %s=%s id=%s -> %s\n' "$stamp" "$kind" "$val" "$machine_id" "${msg:-$resp}" >> "$log"
   case "$msg" in
-    *nvalid*|*xpired*|*wrong*|*ncorrect*|*nauthenticated*|"") : ;;  # leave unmarked -> retry next tick
-    *) echo "$kind" >> "$sub" ;;                                    # owned / already owned / accepted
+    *xpired*|*nauthenticated*|"") : ;;                               # TOKEN issue -> retry next tick (unmarked)
+    *ncorrect*|*nvalid*|*wrong*)  echo "${kind}:bad:${val}" >> "$sub" ;;  # WRONG VALUE -> stop resubmitting it; a new value (e.g. after a reset) still tries
+    *) echo "$kind" >> "$sub" ;;                                     # owned / already owned / accepted -> done
   esac
+}
+
+# rc2_htb_owned_init <rundir> — at launch, read the machine's owned status from the HTB profile and set
+# logs/.flag_mode: "live" if the API exposes ownership (any already-owned flag is pre-marked so it is
+# never submitted), else "defer" (record flags during the run but submit only once, in the final sweep).
+# Best-effort: no API/token -> defer. Field spellings vary by API version, so it probes several.
+rc2_htb_owned_init() {
+  local rundir="$1" logs="$1/logs"; mkdir -p "$logs"; touch "$logs/.submitted" 2>/dev/null
+  [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ] || { echo defer > "$logs/.flag_mode" 2>/dev/null; return 0; }
+  local prof uo ro; prof="$(htb_machine_profile "${machine_id:-$machine_name}" 2>/dev/null)"
+  uo="$(printf '%s' "$prof" | jq -r '[.info.authUserInUserOwns,.authUserInUserOwns,.info.isUserOwned,.info.userOwned,.info.user_owned]|map(select(.!=null))|.[0] // empty' 2>/dev/null)"
+  ro="$(printf '%s' "$prof" | jq -r '[.info.authUserInRootOwns,.authUserInRootOwns,.info.isRootOwned,.info.rootOwned,.info.root_owned]|map(select(.!=null))|.[0] // empty' 2>/dev/null)"
+  _rc2_owned(){ case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in true|1|yes) return 0;; *) return 1;; esac; }
+  if [ -n "$uo" ] || [ -n "$ro" ]; then
+    echo live > "$logs/.flag_mode"
+    _rc2_owned "$uo" && ! grep -qiE '^user$' "$logs/.submitted" 2>/dev/null && { echo user >> "$logs/.submitted"; printf '%s OWNED-AT-START user (skip submit)\n' "$(rc2_utc)" >> "$logs/flag_submit.log"; }
+    _rc2_owned "$ro" && ! grep -qiE '^root$' "$logs/.submitted" 2>/dev/null && { echo root >> "$logs/.submitted"; printf '%s OWNED-AT-START root (skip submit)\n' "$(rc2_utc)" >> "$logs/flag_submit.log"; }
+    echo "[flags] HTB owned-at-start: user=${uo:-?} root=${ro:-?} — live submit for the rest"
+  else
+    echo defer > "$logs/.flag_mode"
+    echo "[flags] HTB profile exposes no owned-status field — recording during the run, submitting once at the end"
+  fi
 }
 
 # rc2_flag_scan_once <rundir> — ONE pass of both submit channels; submit any new user/root flag.
@@ -37,14 +61,17 @@ _rc2_submit_flag() {
 #   2) enforced: a logged command that read user.txt/root.txt (from logs/tools.jsonl + logs/raw/),
 #                so a flag is submitted even if the agent never updated flags.txt.
 rc2_flag_scan_once() {
-  local rundir="$1" logs="$1/logs"
+  local rundir="$1" final="${2:-}" logs="$1/logs"
   [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ -n "${HTB_TOKEN:-}" ] || return 0
   mkdir -p "$logs"; touch "$logs/.submitted"
+  # defer mode (HTB didn't expose owned-status): RECORD every tick but SUBMIT only in the final sweep.
+  local mode do_submit=1; mode="$(cat "$logs/.flag_mode" 2>/dev/null)"; mode="${mode:-live}"
+  [ "$mode" = "defer" ] && [ "$final" != "final" ] && do_submit=0
   # 1) manual channel — flags.txt (user=/root=)
   local u r
-  u="$(rc2_flag_value user "$rundir")"; [ -n "$u" ] && _rc2_submit_flag "$rundir" user "$u"
-  r="$(rc2_flag_value root "$rundir")"; [ -n "$r" ] && _rc2_submit_flag "$rundir" root "$r"
-  # 2) enforced channel — a logged command that read user.txt/root.txt
+  u="$(rc2_flag_value user "$rundir")"; [ -n "$u" ] && [ "$do_submit" = 1 ] && _rc2_submit_flag "$rundir" user "$u"
+  r="$(rc2_flag_value root "$rundir")"; [ -n "$r" ] && [ "$do_submit" = 1 ] && _rc2_submit_flag "$rundir" root "$r"
+  # 2) enforced channel — a logged command that read user.txt/root.txt (RECORD always; SUBMIT per mode)
   local line cmd of val
   rc2_tl_posts "$logs/tools.jsonl" | while IFS= read -r line; do
     cmd="$(printf '%s' "$line" | jq -r '.command // empty' 2>/dev/null)"
@@ -52,10 +79,10 @@ rc2_flag_scan_once() {
     case "$cmd" in
       *root.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
                   val="$(rc2_hex_in "$logs/$of")"
-                  [ -n "$val" ] && { _rc2_record_flag "$rundir" root "$val"; _rc2_submit_flag "$rundir" root "$val"; } ;;
+                  [ -n "$val" ] && { _rc2_record_flag "$rundir" root "$val"; [ "$do_submit" = 1 ] && _rc2_submit_flag "$rundir" root "$val"; } ;;
       *user.txt*) of="$(printf '%s' "$line" | jq -r '.out_file // empty' 2>/dev/null)"
                   val="$(rc2_hex_in "$logs/$of")"
-                  [ -n "$val" ] && { _rc2_record_flag "$rundir" user "$val"; _rc2_submit_flag "$rundir" user "$val"; } ;;
+                  [ -n "$val" ] && { _rc2_record_flag "$rundir" user "$val"; [ "$do_submit" = 1 ] && _rc2_submit_flag "$rundir" user "$val"; } ;;
     esac
   done
 }
