@@ -83,7 +83,9 @@ The system has three layers; read them together:
 
 - **The memory is the run dir — three living files the agent rewrites every loop.**
   `worldmodel.md` (only VERIFIED facts), `hypotheses.md` (the ranked attack board with
-  per-hypothesis evidence budgets), `journal.md` (append-only decision trail). Raw evidence
+  per-hypothesis evidence budgets), `journal.md` (append-only decision trail), plus `ledger.json` —
+  the machine-readable mirror of the board that the **guard** reads (the solver keeps it in sync;
+  counters/arbiter-freezes live in the harness-owned `logs/accounting.json`). Raw evidence
   lives beside them under `recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/
   logs/`. This is what lets a hunt outlive a single context window — the core requirement for
   Insane boxes. See `doctrine/40-memory-and-state.md` for the exact formats.
@@ -143,19 +145,34 @@ the zero-dependency default for everything else.
   `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
   `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
-  `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `install_tools.sh`
+  `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `guard.sh` (set the
+  guard's *live* level or `show` floor/live/effective — the guard's operator/oversee channel, §4a of
+  the GUIDE); `install_tools.sh`
   (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer); `auto_pr.sh` (optional dev-workflow
   Stop hook — branch→PR→merge, wired from a personal gitignored `.claude/settings.local.json`; not
-  part of a hunt). `lib/tools_log.sh` holds the shared `logs/tools.jsonl` readers.
-- **Live state.** `hunt` runs two background loops: `rc2_flag_watcher` (auto-submits user/root flags
-  via the HTB API through two channels — `flags.txt` and an enforced scan of logged `user.txt`/
-  `root.txt` reads — with persistent dedup in `logs/.submitted` and retry on an auth-rejected submit) and
-  `rc2_status_writer` (rewrites `status.md` every `STATUS_INTERVAL`, default 600s — flags, phase,
-  hypothesis counts, journal tail, recent tools, tmux, artifact counts). The HTB spawn/IP wait is
-  15 tries × 180s = 45 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`); shorten via env for fast boxes.
+  part of a hunt). `lib/tools_log.sh` holds the shared `logs/tools.jsonl` readers; `lib/guard_lib.sh`
+  holds the dependency-free guard/JSON helpers shared by the standalone hook and the API.
+- **Live state.** `hunt` runs background loops: `rc2_flag_watcher` (submits user/root flags via the HTB
+  API through two channels — `flags.txt` and an enforced scan of logged `user.txt`/`root.txt` reads —
+  with persistent dedup in `logs/.submitted`, incl. a per-value `kind:bad:<flag>` entry so a rejected
+  flag is not re-hammered; `rc2_htb_owned_init` reads owned-status at launch → `logs/.flag_mode`
+  `live` or `defer`-to-end), `rc2_status_writer` (rewrites `status.md` every 600s — flags, phase,
+  hypotheses, the guard/ledger line, journal tail, recent tools, tmux, artifacts; also keeps a live
+  "Confirmed path" block in `writeup.md`), and — when a guard layer is on — `rc2_guard_watcher`.
+  The HTB spawn/IP wait is 15 tries × 180s = 45 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`).
+- **The guard (anti-rabbit-hole; opt-in, off by default).** Three layers share `ledger.json` (solver
+  intent) + `logs/accounting.json` (harness counters, solver-unwritable): the **hook** (per-call —
+  repeat/stall/frozen/ceiling warn-or-block + one-shot override), the **sameness watcher**
+  (`rc2_guard_watcher` + `JUDGE.md` — an out-of-band sonnet/haiku judge that persistently freezes a
+  hypothesis it rules a rabbit hole), and the **oversee gate** (same-FOCUS consensus → raises the live
+  level). Enforcement is a **two-tier switch**: operator floor (`RC2_GUARD` env) ⊔ live
+  (`logs/guard.mode`, secret-tagged via `logs/.guard_secret` so the solver can't forge it),
+  `effective=max`. Helpers in `lib/guard_lib.sh`, defaults in `lib/env.sh`, reference in GUIDE §4a.
 - **Oversight.** `oversee.sh` runs an opus reviewer that writes `supervisor.md` only on drift; the
   solver follows a newer `SUPERVISOR_TICK` (doctrine `10-hunt-loop.md`). Its system prompt is
-  `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt).
+  `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt). With the guard
+  enabled it also drives the **weighted gate** — only `RC2_GATE_N` consecutive same-`FOCUS`
+  rabbit-hole verdicts raise the live guard level (via `guard.sh`, re-asserted each tick).
 - **Reversing** is export-first (`doctrine/60-reversing.md`): IDA → files under `reversing/`,
   grep locally, query IDA MCP only surgically; gdb runs in a `<tmux_base>_dbg` tmux session,
   launched with a plugin via the on-PATH wrappers `gdb-pwndbg` (default) / `gdb-gef` / `gdb-peda`
