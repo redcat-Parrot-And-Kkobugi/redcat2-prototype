@@ -56,6 +56,9 @@ mkdir -p "$RUNDIR/logs"
 
 # P2 weighted gate (opt-in): escalate the LIVE guard mode only after GATE_N consecutive rabbit-hole
 # verdicts about the SAME focus. On by RC2_GATE=1 or whenever an operator floor is set (RC2_GUARD!=off).
+# R5 (intentional, not a bug): this predicate decides whether OVERSEE may move the LIVE tier. It is
+# NOT the same as hunt's watcher predicate — hunt also honours RC2_GUARD_WATCH (judge-only, no gate).
+# Here: the gate is on if the operator set any floor (RC2_GUARD!=off) or explicitly opted in (RC2_GATE=1).
 GATE="${RC2_GATE:-0}"; [ "${RC2_GUARD:-off}" != "off" ] && GATE=1
 GATE_N="${RC2_GATE_N:-2}"
 GATE_MODE="${RC2_GATE_MODE:-block}"
@@ -137,10 +140,10 @@ _oversee_gate(){
 
   if [ "$status" = "rabbit-hole" ]; then
     if [ "$fp" = "$prev_fp" ]; then streak=$((streak+1)); else streak=1; fi
-    jq --arg fp "$fp" --argjson s "$streak" '.supervisor.consecutive_rabbit_hole=$s | .supervisor.last_fp=$fp | .supervisor.last_verdict="rabbit-hole"' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+    rc2_json_update "$acct" '.supervisor.consecutive_rabbit_hole=$s | .supervisor.last_fp=$fp | .supervisor.last_verdict="rabbit-hole"' --arg fp "$fp" --argjson s "$streak"
     if [ "$streak" -ge "${GATE_N:-2}" ]; then
       if "$ROOT/scripts/guard.sh" "$RUNDIR" "${GATE_MODE:-block}" "rabbit-hole consensus x$streak: $focus" >/dev/null 2>&1; then
-        jq '.supervisor.gated=true' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+        rc2_json_update "$acct" '.supervisor.gated=true'
         echo "   ${r}GATE${n} live→${GATE_MODE:-block}  (rabbit-hole x$streak on '$focus')"
       fi
     else
@@ -148,7 +151,7 @@ _oversee_gate(){
     fi
   else
     if [ "$streak" -gt 0 ] || [ "$gated" = "true" ]; then
-      jq --arg st "$status" '.supervisor.consecutive_rabbit_hole=0 | .supervisor.last_fp="" | .supervisor.gated=false | .supervisor.last_verdict=$st' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+      rc2_json_update "$acct" '.supervisor.consecutive_rabbit_hole=0 | .supervisor.last_fp="" | .supervisor.gated=false | .supervisor.last_verdict=$st' --arg st "$status"
       if [ "$gated" = "true" ]; then
         "$ROOT/scripts/guard.sh" "$RUNDIR" off "back to $status — release gate" >/dev/null 2>&1 \
           && echo "   ${g}gate released (live→off; effective falls back to operator floor)${n}"

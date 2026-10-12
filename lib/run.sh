@@ -272,7 +272,7 @@ rc2_write_status() {
     grep -nE '^### H' "$rundir/hypotheses.md" 2>/dev/null | sed 's/^[0-9]*:/  /' | head -12
     echo
     echo "## ledger (machine state)"
-    echo "- guard: floor=${RC2_GUARD:-off} · live=$( [ -s "$L/guard.mode" ] && { sed -n 's/^mode=//p' "$L/guard.mode" 2>/dev/null | head -1; } || echo none )  (effective = stronger of the two)"
+    echo "- guard: floor=${RC2_GUARD:-off} · live=$( [ -s "$L/guard.mode" ] && { sed -n 's/^mode=//p' "$L/guard.mode" 2>/dev/null | head -1; } || echo none ) · effective=$(rc2_guard_effective "$rundir" 2>/dev/null)"
     if [ -s "$rundir/ledger.json" ]; then
       jq -r '
         "- current: \(.current_hypothesis // "—")   confirmed_path: \(.confirmed_path | length)",
@@ -351,12 +351,10 @@ rc2_run_sameness_judge() {
 rc2_guard_commit_freeze() {
   local rundir="$1" h="$2" conf="$3" reason="$4" acct="$rundir/logs/accounting.json" led="$rundir/ledger.json"
   local resumable=true; [ "$conf" = "high" ] && resumable=false
-  jq --arg h "$h" --arg c "$conf" --arg r "$reason" --argjson res "$resumable" \
-     '.arbiter_freezes[$h]={confidence:$c,reason:$r,resumable:$res,by:"arbiter",at:(now|todate)} | .freeze_candidate=null' \
-     "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
-  jq --arg h "$h" --arg c "$conf" --arg r "$reason" --argjson res "$resumable" \
-     '.hypotheses[$h].status="frozen" | .hypotheses[$h].freeze={frozen:true,confidence:$c,reason:$r,by:"arbiter",resumable:$res,at:(now|todate)}' \
-     "$led" > "$led.tmp" 2>/dev/null && mv "$led.tmp" "$led" 2>/dev/null
+  rc2_json_update "$acct" '.arbiter_freezes[$h]={confidence:$c,reason:$r,resumable:$res,by:"arbiter",at:(now|todate)} | .freeze_candidate=null' \
+     --arg h "$h" --arg c "$conf" --arg r "$reason" --argjson res "$resumable"
+  rc2_json_update "$led" '.hypotheses[$h].status="frozen" | .hypotheses[$h].freeze={frozen:true,confidence:$c,reason:$r,by:"arbiter",resumable:$res,at:(now|todate)}' \
+     --arg h "$h" --arg c "$conf" --arg r "$reason" --argjson res "$resumable"
   printf '%s ARBITER FROZE %s (conf=%s): %s — switch hypotheses (one-shot override in ledger.json if you truly disagree).\n' "$(rc2_utc)" "$h" "$conf" "$reason" >> "$rundir/journal.md" 2>/dev/null || true
   printf '%s froze %s conf=%s: %s\n' "$(rc2_utc)" "$h" "$conf" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
 }
@@ -365,17 +363,15 @@ rc2_guard_commit_freeze() {
 # when the hook flagged a freeze_candidate OR the current hypothesis stalled >= RC2_STALL experiments
 # with no new verified fact. Debounced per hypothesis so the judge is not called every tick.
 rc2_guard_watcher() {
+  # defaults centralized in env.sh (sourced by bootstrap before this runs); bare on purpose
   local rundir="$1" interval="${GUARD_WATCH_INTERVAL:-180}" stall="${RC2_STALL:-12}"
   local acct="$rundir/logs/accounting.json" led="$rundir/ledger.json"
   while [ ! -f "$rundir/logs/.stop" ]; do
     sleep "$interval"
     [ -s "$acct" ] && [ -s "$led" ] || continue
-    local cur frozen afrozen cand exp lastp lastj
+    local cur cand exp lastp lastj
     cur="$(jq -r '.current_hypothesis // empty' "$led" 2>/dev/null)"; [ -n "$cur" ] || continue
-    frozen="$(jq -r --arg h "$cur" '.hypotheses[$h].freeze.frozen // false' "$led" 2>/dev/null)"
-    afrozen="$(jq -r --arg h "$cur" '.arbiter_freezes[$h] // empty' "$acct" 2>/dev/null)"
-    [ "$frozen" = "true" ] && continue
-    [ -n "$afrozen" ] && continue
+    rc2_is_frozen "$rundir" "$cur" && continue   # already frozen (solver or arbiter) — nothing to judge
     cand="$(jq -r '.freeze_candidate.hypothesis // empty' "$acct" 2>/dev/null)"
     exp="$(jq -r '.global.experiments // 0' "$acct" 2>/dev/null)"
     lastp="$(jq -r '.progress.last_progress_experiment // 0' "$acct" 2>/dev/null)"
@@ -383,7 +379,7 @@ rc2_guard_watcher() {
     if { [ "$cand" = "$cur" ] || [ $((exp - lastp)) -ge "$stall" ] 2>/dev/null; } && [ $((exp - lastj)) -ge "$stall" ] 2>/dev/null; then
       local v verdict conf reason
       v="$(rc2_run_sameness_judge "$rundir" "$cur")"
-      jq --arg h "$cur" --argjson e "$exp" '.judge.last_experiment[$h]=$e' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+      rc2_json_update "$acct" '.judge.last_experiment[$h]=$e' --arg h "$cur" --argjson e "$exp"
       [ -n "$v" ] || continue
       verdict="$(printf '%s' "$v" | jq -r '.verdict // empty' 2>/dev/null)"
       conf="$(printf '%s' "$v" | jq -r '.confidence // "med"' 2>/dev/null)"
@@ -391,7 +387,7 @@ rc2_guard_watcher() {
       if [ "$verdict" = "SAME" ] && { [ "$conf" = "med" ] || [ "$conf" = "high" ]; }; then
         rc2_guard_commit_freeze "$rundir" "$cur" "$conf" "$reason"
       else
-        jq '.freeze_candidate=null' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+        rc2_json_update "$acct" '.freeze_candidate=null'
         printf '%s judge: %s on %s (conf=%s) — %s\n' "$(rc2_utc)" "${verdict:-none}" "$cur" "$conf" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
       fi
     fi

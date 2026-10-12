@@ -21,15 +21,16 @@ reason="${3:-}"
 L="$RUNDIR/logs"; gm="$L/guard.mode"; sec="$L/.guard_secret"
 
 if [ "$mode" = "show" ]; then
-  echo "run:   $(basename "$RUNDIR")"
-  echo "floor: ${RC2_GUARD:-off}   (operator env at launch; live can never go below it)"
-  echo "live:  $( [ -s "$gm" ] && { sed -n 's/^mode=//p' "$gm" | head -1; } || echo 'none (=> effective is the floor)')"
+  echo "run:       $(basename "$RUNDIR")"
+  echo "floor:     ${RC2_GUARD:-off}   (operator env at launch; live can never go below it)"
+  echo "live:      $( [ -s "$gm" ] && { sed -n 's/^mode=//p' "$gm" | head -1; } || echo 'none')"
+  echo "effective: $(rc2_guard_effective "$RUNDIR" 2>/dev/null)"
   exit 0
 fi
 case "$mode" in off|warn|block) ;; *) echo "guard: mode must be off|warn|block|show" >&2; exit 2;; esac
 [ -s "$sec" ] || { echo "guard: no $sec (hunt writes it at scaffold) — cannot tag a trusted live mode" >&2; exit 1; }
 
-tag="$(printf '%s%s' "$mode" "$(cat "$sec")" | md5sum | cut -c1-32)"
+tag="$(rc2_guard_tag "$mode" "$sec")"
 { echo "mode=$mode"; echo "tag=$tag"; } > "$gm.tmp" && mv "$gm.tmp" "$gm"
 printf '%s set live=%s%s\n' "$(rc2_utc)" "$mode" "${reason:+ ($reason)}" >> "$L/guard.log" 2>/dev/null || true
 echo "[guard] live mode = '$mode' for $(basename "$RUNDIR")${reason:+  — $reason}  (effective = max(floor ${RC2_GUARD:-off}, $mode))"
