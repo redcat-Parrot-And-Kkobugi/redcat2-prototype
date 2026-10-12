@@ -66,7 +66,7 @@ rc2_status_writer "$RUNDIR" & STATUS_PID=$!
 # background sameness-judge watcher (P1-d): an independent judge freezes a hypothesis ruled a rabbit
 # hole. Runs when enforcement is enabled (RC2_GUARD!=off) or RC2_GUARD_WATCH=1; NO_GUARD_WATCH=1 forces off.
 GUARD_WATCH_PID=""
-if { [ "${RC2_GUARD:-off}" != "off" ] || [ "${RC2_GUARD_WATCH:-0}" = "1" ]; } && [ "${NO_GUARD_WATCH:-0}" != "1" ]; then
+if { [ "${RC2_GUARD:-off}" != "off" ] || [ "${RC2_GUARD_WATCH:-0}" = "1" ] || [ "${RC2_GATE:-0}" = "1" ]; } && [ "${NO_GUARD_WATCH:-0}" != "1" ]; then
   rc2_guard_watcher "$RUNDIR" & GUARD_WATCH_PID=$!
   echo "[guard] sameness watcher on (judge=${GUARD_JUDGE_MODEL:-sonnet}, every ${GUARD_WATCH_INTERVAL:-180}s, stall=${RC2_STALL:-12})"
 fi

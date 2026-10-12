@@ -40,6 +40,7 @@ Before you judge:
 ## Verdict format (output exactly this, nothing else)
 ```
 STATUS: <on-track | minor-drift | rabbit-hole>
+FOCUS: <2-5 word stable slug of the ONE thing in play right now — the hypothesis/vector/endpoint, e.g. "localstack-floci-escape">
 READ: <1-2 lines — what the evidence actually shows right now>
 GOOD: <1 line — the move to keep doing, if any>
 STOP: <the specific thing to stop, if drifting — else "-">
@@ -48,3 +49,8 @@ DO NEXT: <1-3 concrete, prioritized actions grounded in the evidence>
 Keep it short and specific. Name the hypothesis, endpoint, file, or finding. A false
 "on-track" that lets a rabbit hole run is the expensive mistake; so is nagging a solver that is
 actually progressing. Call it as the evidence shows.
+
+**Keep `FOCUS` IDENTICAL across ticks while the solver pursues the same thing** — the harness
+compares it across your consecutive `rabbit-hole` verdicts, and sustained drift on one focus is what
+authorizes it to automatically tighten the solver's guard. Only change the slug when the thing in play
+genuinely changes. This is a detection signal, not prose: a short, stable, lowercase-ish slug.

@@ -54,6 +54,12 @@ HIST="$RUNDIR/logs/supervisor.jsonl"
 SYS="$ROOT/OVERSEER.md"
 mkdir -p "$RUNDIR/logs"
 
+# P2 weighted gate (opt-in): escalate the LIVE guard mode only after GATE_N consecutive rabbit-hole
+# verdicts about the SAME focus. On by RC2_GATE=1 or whenever an operator floor is set (RC2_GUARD!=off).
+GATE="${RC2_GATE:-0}"; [ "${RC2_GUARD:-off}" != "off" ] && GATE=1
+GATE_N="${RC2_GATE_N:-2}"
+GATE_MODE="${RC2_GATE_MODE:-block}"
+
 build_digest(){
   local tj="$RUNDIR/logs/tools.jsonl" elapsed="?" now; now=$(date +%s)
   [ -f "$RUNDIR/logs/meta.env" ] && { . "$RUNDIR/logs/meta.env" 2>/dev/null; [ -n "${start_epoch:-}" ] && elapsed="$(( (now-start_epoch)/60 ))m"; }
@@ -114,6 +120,43 @@ $(cat)" \
 _oversee_failed(){ [ "$1" -ne 0 ] && return 0; printf '%s' "$2" | grep -qiE 'API Error|safeguards flagged|\[cyber\]|Request ID|reviewer call failed'; }
 _oversee_cyber(){ printf '%s' "$1" | grep -qiE 'safeguards flagged|\[cyber\]|Cyber Verification'; }
 
+# _oversee_gate <status> <verdict> — the P2 weighted gate. Tracks consecutive rabbit-hole verdicts
+# about the SAME FOCUS in accounting.json and, at GATE_N, raises the LIVE guard mode via guard.sh
+# (re-asserted each tick); any on-track/minor-drift breaks the streak and releases the gate. Opt-in,
+# never fires on error/unknown, and (by guard.sh) can never pull enforcement below the operator floor.
+_oversee_gate(){
+  local status="$1" verdict="$2" acct="$RUNDIR/logs/accounting.json"
+  [ "${GATE:-0}" = "1" ] && [ -s "$acct" ] || return 0
+  case "$status" in rabbit-hole|on-track|minor-drift) ;; *) return 0 ;; esac
+  local focus fp prev_fp streak gated
+  focus="$(printf '%s' "$verdict" | grep -oiE '^FOCUS:.*' | head -1 | sed -E 's/^[Ff][Oo][Cc][Uu][Ss]:[[:space:]]*//' | cut -c1-80)"
+  fp="$(printf '%s' "$focus" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"; [ -n "$fp" ] || fp="unspecified"
+  prev_fp="$(jq -r '.supervisor.last_fp // ""' "$acct" 2>/dev/null)"
+  streak="$(jq -r '.supervisor.consecutive_rabbit_hole // 0' "$acct" 2>/dev/null)"
+  gated="$(jq -r '.supervisor.gated // false' "$acct" 2>/dev/null)"
+
+  if [ "$status" = "rabbit-hole" ]; then
+    if [ "$fp" = "$prev_fp" ]; then streak=$((streak+1)); else streak=1; fi
+    jq --arg fp "$fp" --argjson s "$streak" '.supervisor.consecutive_rabbit_hole=$s | .supervisor.last_fp=$fp | .supervisor.last_verdict="rabbit-hole"' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+    if [ "$streak" -ge "${GATE_N:-2}" ]; then
+      if "$ROOT/scripts/guard.sh" "$RUNDIR" "${GATE_MODE:-block}" "rabbit-hole consensus x$streak: $focus" >/dev/null 2>&1; then
+        jq '.supervisor.gated=true' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+        echo "   ${r}GATE${n} live→${GATE_MODE:-block}  (rabbit-hole x$streak on '$focus')"
+      fi
+    else
+      echo "   ${y}gate: rabbit-hole streak $streak/${GATE_N:-2} on '$focus' (needs $(( ${GATE_N:-2} - streak )) more to escalate)${n}"
+    fi
+  else
+    if [ "$streak" -gt 0 ] || [ "$gated" = "true" ]; then
+      jq --arg st "$status" '.supervisor.consecutive_rabbit_hole=0 | .supervisor.last_fp="" | .supervisor.gated=false | .supervisor.last_verdict=$st' "$acct" > "$acct.tmp" 2>/dev/null && mv "$acct.tmp" "$acct" 2>/dev/null
+      if [ "$gated" = "true" ]; then
+        "$ROOT/scripts/guard.sh" "$RUNDIR" off "back to $status — release gate" >/dev/null 2>&1 \
+          && echo "   ${g}gate released (live→off; effective falls back to operator floor)${n}"
+      fi
+    fi
+  fi
+}
+
 assess(){
   local rev="$1" digest verdict ts status cur new rc intervened
   digest="$(build_digest)"
@@ -138,6 +181,8 @@ assess(){
 
   jq -cn --arg ts "$ts" --arg rev "$rev" --arg st "$status" --arg v "$verdict" --argjson iv "$intervened" \
      '{ts:$ts, review:($rev|tonumber), status:$st, intervened:$iv, verdict:$v}' >> "$HIST" 2>/dev/null
+
+  _oversee_gate "$status" "$verdict"   # P2: consensus-gated live-mode escalation (opt-in; no-op on error/unknown)
 
   if [ "$status" = "on-track" ]; then
     echo "${g}   on-track — no intervention (supervisor.md untouched)${n}"
@@ -172,6 +217,8 @@ assess(){
 echo "${c}[oversee]${n} watching $RUNDIR  (model=$MODEL interval=${INTERVAL}s)"
 echo "${d}   reviews on each new activity; writes $SUP ONLY on drift/rabbit-hole; every review → $HIST ; Ctrl+C to stop${n}"
 [ -n "$OP_NOTE" ] && echo "${y}   operator directive active:${n} $OP_NOTE ${d}(relayed to solver until followed)${n}"
+if [ "$GATE" = "1" ]; then echo "${y}   weighted gate ON:${n} ${GATE_N} consecutive same-focus rabbit-holes → live guard '${GATE_MODE}' (re-asserted; never below operator floor)"
+else echo "${d}   weighted gate off (advisory only; set RC2_GATE=1 or RC2_GUARD=warn|block to enable auto-escalation)${n}"; fi
 tick=0; last_lines=-1
 if [ "${ONESHOT:-}" = "1" ]; then assess 1; exit 0; fi
 while true; do

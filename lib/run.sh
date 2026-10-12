@@ -103,7 +103,7 @@ JSON
   "global": { "experiments": 0, "ceiling": ${RC2_CEIL:-800}, "warn_at": ${RC2_WARN:-450}, "overrides_used": 0 },
   "per_hypothesis": {},
   "progress": { "last_progress_utc": null, "last_progress_fp": null, "last_progress_experiment": 0 },
-  "supervisor": { "consecutive_rabbit_hole": 0, "last_verdict": null, "last_fp": null },
+  "supervisor": { "consecutive_rabbit_hole": 0, "last_verdict": null, "last_fp": null, "gated": false },
   "consumed_overrides": [],
   "freeze_candidate": null,
   "arbiter_freezes": {},
@@ -406,7 +406,8 @@ rc2_launch_oversee() {
   local rundir="$1" slug; slug="$(basename "$rundir")"
   HERDR_OVERSEE_PANE=""
   [ "${NO_OVERSEE:-0}" = "1" ] && { echo "[oversee] disabled (NO_OVERSEE=1)"; return 0; }
-  local ocmd="OVERSEE_INTERVAL='${OVERSEE_INTERVAL:-600}' scripts/oversee.sh '$slug'"
+  # pass the guard/gate env explicitly: a pre-existing tmux server would not inherit it otherwise
+  local ocmd="RC2_GATE='${RC2_GATE:-}' RC2_GUARD='${RC2_GUARD:-off}' RC2_GATE_N='${RC2_GATE_N:-}' RC2_GATE_MODE='${RC2_GATE_MODE:-}' OVERSEE_INTERVAL='${OVERSEE_INTERVAL:-600}' scripts/oversee.sh '$slug'"
   if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
     local p; p="$(herdr pane split --current --direction right --cwd "$RC2_ROOT" --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
     if [ -n "$p" ]; then
