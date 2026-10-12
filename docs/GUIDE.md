@@ -124,8 +124,12 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `RC2_BUDGET_DEFAULT` | `8` | per-hypothesis attempt budget seeded into `ledger.json` |
 | `GUARD_JUDGE_MODEL` | `sonnet` | model for the out-of-band sameness judge (`haiku` = cheaper/coarser) |
 | `GUARD_WATCH_INTERVAL` | `180` | sameness-judge watcher cadence (s) |
+| `RC2_SURRENDER_MAX` | `2` | max times the surrender gate may re-open a blocker and relaunch (`0` disables) |
+| `RC2_SURRENDER_MODEL` | `opus` | model for the independent surrender-gate re-audit (high stakes → opus) |
+| `NO_SURRENDER` | `0` | `1` = never run the surrender gate (accept a clean-exit blocker as-is) |
 
 All guard defaults live in **one place** — `lib/env.sh` — and are overridable via `.env` or the launch env.
+The surrender gate runs whenever the guard is enabled (`RC2_GUARD!=off`, `RC2_GATE=1`, or `RC2_GUARD_WATCH=1`).
 
 ### Launch sequence (what `./hunt` does)
 load `.env` (incl. guard defaults) → refresh HTB token from newest HAR if stale → resolve/spawn the box
@@ -175,24 +179,41 @@ launcher.
 
 ## 4a. The guard — anti-rabbit-hole enforcement
 
-Hard/Insane boxes fail not from missing techniques but from **grinding a disproven hypothesis**
-(e.g. the Nimbus run burned 832 tool calls re-trying one container-escape across 6 sessions while
-solved boxes finished in ~186–416). Doctrine already forbids this, but prose alone did not stop it.
-The guard adds **mechanical enforcement**, opt-in and off by default, in three independent layers that
-share state and are bounded below by the operator.
+Hard/Insane boxes fail two opposite ways, and the guard covers both:
+1. **Grinding a disproven hypothesis** — e.g. the Nimbus run burned 832 tool calls re-trying one
+   container-escape across 6 sessions while solved boxes finished in ~186–416.
+2. **Premature surrender on a wrongly-pruned surface** — the same run dismissed **CodeBuild as "a mock"
+   from one 0.5 s build**, recorded that shallow negative as fact, never re-opened it, and declared a
+   confident (wrong) blocker — when `privilegedMode=true` there was a root container with the host's
+   block devices (the actual root path).
 
-**Three layers**
-- **Hook** (`lib/hook_log.sh`, per tool call, mechanical) — counts experiments per hypothesis in
-  `logs/accounting.json`; warns or blocks on a literal action repeated `RC2_REPEAT_FREEZE`× , a
-  `frozen` hypothesis, or the global `RC2_CEIL`. Cheap and fast; this is **not** the semantic judge.
-- **Sameness watcher** (`rc2_guard_watcher` + `JUDGE.md`, out-of-band, model) — when a hypothesis
-  stalls (`RC2_STALL` experiments, no new evidence) an **independent sonnet/haiku judge** reads the
-  recent actions and rules *SAME* (rabbit hole → persistent **arbiter freeze**, which the solver
-  cannot clear) or *VARYING* (genuine exploration → let it run). This catches textually-varied drilling
-  the hook's literal fingerprint cannot.
+Doctrine forbids both, but prose alone did not stop them. The guard adds **mechanical enforcement**,
+opt-in and off by default, sharing state and bounded below by the operator.
+
+**Layers**
+- **Hook** (`lib/hook_log.sh`, per tool call, mechanical) — counts experiments per hypothesis **and per
+  surface** in `logs/accounting.json`; warns or blocks on a literal action repeated `RC2_REPEAT_FREEZE`×,
+  a `frozen` hypothesis, or the global `RC2_CEIL`. The per-surface tally (codebuild:1 vs ecs:203…) is how
+  a lopsided, under-explored surface gets flagged. Cheap and fast; **not** the semantic judge.
+- **Sameness watcher** (`rc2_guard_watcher` + `JUDGE.md`, out-of-band, model) — when a hypothesis stalls
+  (`RC2_STALL` experiments, no new evidence) an **independent sonnet/haiku judge** rules *SAME* (rabbit
+  hole → persistent **arbiter freeze**, solver can't clear) or *VARYING* (let it run). Catches
+  textually-varied drilling the hook's literal fingerprint cannot. [failure mode 1]
 - **Oversee gate** (`scripts/oversee.sh`, opus, trajectory) — only after `RC2_GATE_N` consecutive
-  rabbit-hole reviews about the **same `FOCUS`** does the supervisor raise the live guard level (and
-  re-assert it each tick); any on-track review releases it.
+  rabbit-hole reviews about the **same `FOCUS`** does the supervisor raise the live guard level
+  (re-asserted each tick; released on any on-track review). [failure mode 1]
+- **Surrender gate** (`rc2_surrender_gate` + `SURRENDER.md`, opus, the mirror image) — when the solver
+  **clean-exits as a blocker**, an independent reviewer re-audits its privilege map + weakest negatives +
+  the per-surface tally and either ACCEPTs the surrender or names a concrete **REOPEN** (component +
+  elevation primitive), which relaunches the solver via a supervisor tick. Bounded by `RC2_SURRENDER_MAX`.
+  This is what catches the Nimbus "CodeBuild=mock → give up". [failure mode 2]
+
+**Orientation & evidence discipline (the doctrine side the guard enforces)** — the solver is told to
+**orient by the privilege delta**: keep a *privilege map* in `worldmodel.md` (who/what runs above you,
+and does your input reach it) and hunt elevation across *all* domains, not just the one you're in; to
+record a **negative** only with how-deeply-tested + confidence (a shallow "it's a mock" is a hypothesis,
+not a fact); and, on entering any new execution context, to **enumerate it openly** (devices, caps,
+mounts, privilege) before judging it dead. The surrender gate is the hard backstop when these slip.
 
 **Two-tier switch (who controls enforcement)**
 - **floor** = `RC2_GUARD` (operator env, set at launch) — the minimum that is always in effect; neither
@@ -296,12 +317,14 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 
 Library (sourced, not run directly): `lib/bootstrap.sh` (loader; chain: common → tools_log → env →
 htb → run), `lib/guard_lib.sh` (dependency-free guard/JSON helpers — `rc2_json_update`,
-`rc2_guard_tag`, `rc2_guard_effective`, `rc2_is_frozen`; shared by the standalone hook and the API),
-`lib/common.sh` (colors, run-dir resolve, UTC time, flag + target.env helpers; sources guard_lib),
+`rc2_guard_tag`, `rc2_guard_effective`, `rc2_is_frozen`, `rc2_guard_core_on`; shared by the standalone
+hook and the API), `lib/common.sh` (colors, run-dir resolve, UTC time, flag + target.env helpers,
+`rc2_write_supervisor`; sources guard_lib),
 `lib/tools_log.sh` (shared `logs/tools.jsonl` readers, `rc2_tl_*`), `lib/env.sh` (.env, SecLists,
 guard-default knobs), `lib/htb.sh` (token/resolve/spawn/VPN pre-flight/flag watcher + owned-status
-init), `lib/run.sh` (scaffold, prompts, run
-loop, status writer, oversee launch), `lib/hook_log.sh` (per-tool-call logging hook + anti-DoS repeat guard).
+init), `lib/run.sh` (scaffold, prompts, resilient run loop + **surrender gate** on clean-exit, status
+writer, sameness-judge watcher, `rc2_claude_oneshot` out-of-band model runner, oversee launch),
+`lib/hook_log.sh` (per-tool-call logging hook + anti-DoS repeat guard + the P1 accounting/guard).
 
 **Full per-tool usage** — every flag, env knob, and example for the above — is in
 [`docs/TOOLS.md`](TOOLS.md). This table is the index; that file is the reference.
@@ -439,7 +462,7 @@ drive the real service with the exploit `exploit-dev` builds.
 ```
 redcat2/
   hunt                      launcher
-  CLAUDE.md README.md OVERSEER.md JUDGE.md .env.example .gitignore
+  CLAUDE.md README.md OVERSEER.md JUDGE.md SURRENDER.md .env.example .gitignore
   docs/GUIDE.md docs/TOOLS.md   this guide + the full per-tool reference
   doctrine/00..60           the brain (system prompt)
   .claude/agents/           researcher recon-analyst exploit-dev verifier reverser
@@ -453,5 +476,5 @@ redcat2/
   runs/<slug>/              per-box workspace + memory (gitignored)
 ```
 
-`OVERSEER.md` = supervisor system prompt; `JUDGE.md` = the sameness-judge system prompt (§4a). Both are
-kept out of `doctrine/` so they never enter the solver's own prompt.
+`OVERSEER.md` = supervisor system prompt; `JUDGE.md` = the sameness-judge prompt; `SURRENDER.md` = the
+surrender-gate re-audit prompt (all §4a). Kept out of `doctrine/` so they never enter the solver's own prompt.

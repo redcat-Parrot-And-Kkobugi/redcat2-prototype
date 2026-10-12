@@ -200,15 +200,18 @@ are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the
   writes `supervisor.md` with a STATUS / STOP / DO-NEXT verdict. The solver reads that file and
   course-corrects (doctrine `10-hunt-loop.md`). It's the long-horizon complement to the in-loop
   `verifier`, catching rabbit holes the solver can't see from inside. It never touches the target.
-- **The guard** (anti-rabbit-hole, **opt-in — off by default**) — mechanical enforcement of the
-  evidence-budget doctrine, in three layers sharing `ledger.json` + `logs/accounting.json`: a
-  per-call **hook** (repeat / stall / ceiling / frozen → warn or block, with a one-shot override),
-  an out-of-band **sameness judge** (sonnet/haiku freezes a hypothesis it rules a dead loop), and
-  the supervisor **gate** (same-focus consensus → tighten). Enforcement is a two-tier switch —
-  operator **floor** (`RC2_GUARD` env) ⊔ oversee **live** (`scripts/guard.sh`, secret-tagged),
-  `effective = max`, so the operator sets a minimum the solver can never undercut. Turn it on with
-  `RC2_GUARD=warn ./hunt Box` (nudges) or `RC2_GATE=1 ./hunt Box` (full auto). See
-  [GUIDE §4a](docs/GUIDE.md).
+- **The guard** (**opt-in — off by default**) — mechanical enforcement of the evidence-budget doctrine,
+  covering **both** ways a hard box is lost. *Against over-grinding:* a per-call **hook** (repeat / stall
+  / ceiling / frozen → warn or block, one-shot override), an out-of-band **sameness judge** (sonnet/haiku
+  freezes a hypothesis it rules a dead loop), and the supervisor **gate** (same-focus consensus → tighten).
+  *Against premature surrender on a surface it pruned too shallowly* (what sank Nimbus — "CodeBuild is a
+  mock" from one fast build, when `privilegedMode=true` was the root path): a **surrender gate** that, on a
+  clean-exit blocker, has an independent opus re-audit the weak negatives + the **privilege map** and
+  re-open a shallow higher-privilege dismissal. The solver is oriented to **hunt the privilege delta**
+  (what runs above me, and does my input reach it) and to record negatives with how-deeply-tested.
+  Enforcement is a two-tier switch — operator **floor** (`RC2_GUARD` env) ⊔ oversee **live**
+  (`scripts/guard.sh`, secret-tagged), `effective = max`. Turn it on with `RC2_GUARD=warn ./hunt Box`
+  (nudges) or `RC2_GATE=1 ./hunt Box` (full auto). See [GUIDE §4a](docs/GUIDE.md).
 - **Retrospectives** (auto on exit, or standalone) — `report.sh` writes metrics into `writeup.md`
   (wall time, tool/Task counts, per-phase timing); `analyze_run.sh` classifies *why* a run went
   as it did (tool-execution / state-mgmt / planning / hypothesis / idle-wait) into

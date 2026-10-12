@@ -160,14 +160,20 @@ the zero-dependency default for everything else.
   hypotheses, the guard/ledger line, journal tail, recent tools, tmux, artifacts; also keeps a live
   "Confirmed path" block in `writeup.md`), and — when a guard layer is on — `rc2_guard_watcher`.
   The HTB spawn/IP wait is 15 tries × 180s = 45 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`).
-- **The guard (anti-rabbit-hole; opt-in, off by default).** Three layers share `ledger.json` (solver
-  intent) + `logs/accounting.json` (harness counters, solver-unwritable): the **hook** (per-call —
-  repeat/stall/frozen/ceiling warn-or-block + one-shot override), the **sameness watcher**
-  (`rc2_guard_watcher` + `JUDGE.md` — an out-of-band sonnet/haiku judge that persistently freezes a
-  hypothesis it rules a rabbit hole), and the **oversee gate** (same-FOCUS consensus → raises the live
-  level). Enforcement is a **two-tier switch**: operator floor (`RC2_GUARD` env) ⊔ live
-  (`logs/guard.mode`, secret-tagged via `logs/.guard_secret` so the solver can't forge it),
-  `effective=max`. Helpers in `lib/guard_lib.sh`, defaults in `lib/env.sh`, reference in GUIDE §4a.
+- **The guard (opt-in, off by default) covers BOTH failure modes.** It shares `ledger.json` (solver
+  intent) + `logs/accounting.json` (harness counters — per-hypothesis **and per-surface** — solver-
+  unwritable). *Against over-grinding:* the **hook** (per-call repeat/stall/frozen/ceiling warn-or-block
+  + one-shot override), the **sameness watcher** (`rc2_guard_watcher` + `JUDGE.md`, out-of-band sonnet/
+  haiku judge → persistent arbiter freeze), and the **oversee gate** (same-`FOCUS` consensus → raises the
+  live level). *Against premature surrender on a wrongly-pruned surface* (the Nimbus "CodeBuild=mock →
+  give up"): the **surrender gate** (`rc2_surrender_gate` + `SURRENDER.md`, opus) re-audits weak negatives
+  + the privilege map on a clean-exit blocker and REOPENs a shallow higher-privilege dismissal, relaunching
+  via a supervisor tick (bounded by `RC2_SURRENDER_MAX`). Doctrine side (what the gate enforces): the solver
+  **orients by the privilege delta** (a privilege map in `worldmodel.md`; `10`/`40`), records **negatives
+  with tested-depth + confidence** (`00`/`40`), and enumerates a new context openly before judging it dead.
+  Enforcement is a **two-tier switch**: operator floor (`RC2_GUARD` env) ⊔ live (`logs/guard.mode`,
+  secret-tagged via `logs/.guard_secret`), `effective=max`. Helpers in `lib/guard_lib.sh`, defaults in
+  `lib/env.sh`, reference in GUIDE §4a.
 - **Oversight.** `oversee.sh` runs an opus reviewer that writes `supervisor.md` only on drift; the
   solver follows a newer `SUPERVISOR_TICK` (doctrine `10-hunt-loop.md`). Its system prompt is
   `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt). With the guard
