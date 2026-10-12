@@ -108,12 +108,33 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `HAR_SRC` | Windows DevTools folder | where to import the newest HAR from |
 | `FRESH` | — | same as `--fresh` |
 
+**Guard / anti-rabbit-hole (see [§4a](#4a-the-guard--anti-rabbit-hole-enforcement); all off by default):**
+
+| var | default | effect |
+|---|---|---|
+| `RC2_GUARD` | `off` | operator **floor** = minimum enforcement that the solver/supervisor can never go below: `off` \| `warn` (nudge only) \| `block` (refuse the call). `!=off` also turns the sameness watcher + oversee gate on |
+| `RC2_GATE` | `0` | `1` = let **oversee** raise the *live* guard level on rabbit-hole consensus (floor stays whatever `RC2_GUARD` is). One switch for full automation; also starts the watcher |
+| `RC2_GUARD_WATCH` | `0` | `1` = start the sameness-judge watcher without setting a floor (judge+freeze only) |
+| `NO_GUARD_WATCH` | `0` | `1` = force the watcher off even if a floor/gate is set |
+| `RC2_GATE_MODE` | `block` | the live mode oversee escalates to on consensus (set `warn` for observe-only) |
+| `RC2_GATE_N` | `2` | consecutive same-`FOCUS` rabbit-hole reviews before oversee escalates |
+| `RC2_REPEAT_FREEZE` | `4` | identical-action repeats on one hypothesis before the hook warns/blocks |
+| `RC2_STALL` | `12` | experiments on one hypothesis with no new evidence before the judge is asked |
+| `RC2_CEIL` / `RC2_WARN` | `800` / `450` | global experiment hard-stop / warn line (calibration: solved runs ran ~186–416 calls) |
+| `RC2_BUDGET_DEFAULT` | `8` | per-hypothesis attempt budget seeded into `ledger.json` |
+| `GUARD_JUDGE_MODEL` | `sonnet` | model for the out-of-band sameness judge (`haiku` = cheaper/coarser) |
+| `GUARD_WATCH_INTERVAL` | `180` | sameness-judge watcher cadence (s) |
+
+All guard defaults live in **one place** — `lib/env.sh` — and are overridable via `.env` or the launch env.
+
 ### Launch sequence (what `./hunt` does)
-load `.env` → refresh HTB token from newest HAR if stale → resolve/spawn the box (wait up to 15×3 min) →
-VPN pre-flight (`openvpn --daemon` if `HTB_OVPN` set) → scaffold `runs/<slug>/` → start the flag
-auto-submitter, the `status.md` writer, and the supervisor (herdr pane or tmux) → build the
-system prompt from `doctrine/*.md` → run `claude -p` in the resilient loop → on exit write
-`writeup.md` + `failure_analysis.*` and a final `status.md`. **On a solve** (both flags) it also
+load `.env` (incl. guard defaults) → refresh HTB token from newest HAR if stale → resolve/spawn the box
+(wait up to 15×3 min) → VPN pre-flight (`openvpn --daemon` if `HTB_OVPN` set) → scaffold `runs/<slug>/`
+(seed the 3 living files + `ledger.json` + `logs/accounting.json` + the guard secret) → read HTB
+owned-flag status (sets live/defer flag-submit mode) → start the flag auto-submitter, the `status.md`
+writer, the supervisor (herdr pane or tmux), and — when any guard layer is enabled — the sameness-judge
+watcher → build the system prompt from `doctrine/*.md` → run `claude -p` in the resilient loop → on exit
+write `writeup.md` + `failure_analysis.*` and a final `status.md`. **On a solve** (both flags) it also
 **terminates the HTB machine** (unless `NO_STOP=1`) and tears down the run's tmux sessions;
 otherwise state is preserved for resume.
 
@@ -152,6 +173,50 @@ launcher.
 
 ---
 
+## 4a. The guard — anti-rabbit-hole enforcement
+
+Hard/Insane boxes fail not from missing techniques but from **grinding a disproven hypothesis**
+(e.g. the Nimbus run burned 832 tool calls re-trying one container-escape across 6 sessions while
+solved boxes finished in ~186–416). Doctrine already forbids this, but prose alone did not stop it.
+The guard adds **mechanical enforcement**, opt-in and off by default, in three independent layers that
+share state and are bounded below by the operator.
+
+**Three layers**
+- **Hook** (`lib/hook_log.sh`, per tool call, mechanical) — counts experiments per hypothesis in
+  `logs/accounting.json`; warns or blocks on a literal action repeated `RC2_REPEAT_FREEZE`× , a
+  `frozen` hypothesis, or the global `RC2_CEIL`. Cheap and fast; this is **not** the semantic judge.
+- **Sameness watcher** (`rc2_guard_watcher` + `JUDGE.md`, out-of-band, model) — when a hypothesis
+  stalls (`RC2_STALL` experiments, no new evidence) an **independent sonnet/haiku judge** reads the
+  recent actions and rules *SAME* (rabbit hole → persistent **arbiter freeze**, which the solver
+  cannot clear) or *VARYING* (genuine exploration → let it run). This catches textually-varied drilling
+  the hook's literal fingerprint cannot.
+- **Oversee gate** (`scripts/oversee.sh`, opus, trajectory) — only after `RC2_GATE_N` consecutive
+  rabbit-hole reviews about the **same `FOCUS`** does the supervisor raise the live guard level (and
+  re-assert it each tick); any on-track review releases it.
+
+**Two-tier switch (who controls enforcement)**
+- **floor** = `RC2_GUARD` (operator env, set at launch) — the minimum that is always in effect; neither
+  the solver nor oversee can go below it.
+- **live** = `logs/guard.mode` (written by oversee/operator via `scripts/guard.sh`, authenticated by a
+  secret tag in `logs/.guard_secret` the solver may not read) — the dynamic level.
+- **effective = the stronger of the two.** So the operator guarantees a minimum, automation can only
+  tighten it, and the solver can never weaken its own guard. `scripts/guard.sh <run> show` prints all three.
+
+**State (intent vs accounting)** — `ledger.json` is the solver's *intent* (current hypothesis, its own
+freezes, a one-shot `override`); `logs/accounting.json` is the harness's *counters* and the arbiter
+freezes, which the solver must never write. Keeping them separate means a bad hand-edit can't corrupt
+the counters enforcement rests on. A guard block always names the reason, the ledger snapshot, the exact
+command, and the three ways out: **vary materially**, **freeze + switch**, or spend a one-shot `override`.
+
+**Turning it on** (see the toggles table above):
+```bash
+./hunt Box                          # default: guard OFF (no behaviour change)
+RC2_GUARD=warn ./hunt Box           # floor=warn: nudges only; watcher + oversee gate also on
+RC2_GATE=1 ./hunt Box               # full auto: floor off, oversee escalates to block on consensus
+RC2_GUARD=block ./hunt Box          # hard enforcement from the start
+scripts/guard.sh Box show           # floor / live / effective right now
+```
+
 ## 5. Sub-agents
 
 Claude Code native sub-agents in `.claude/agents/`, each on a model suited to its job. The
@@ -181,22 +246,29 @@ The **three living files** are rewritten every loop:
 - `hypotheses.md` — the ranked attack board; one block per hypothesis with preconditions,
   evidence, confidence/impact/cost, next experiment, and an evidence budget.
 - `journal.md` — append-only decision trail (what/why/result/next). The anti-rabbit-hole record.
+- `ledger.json` — the machine-readable **mirror** of the board (current hypothesis, per-hypothesis
+  status/budget/freeze, confirmed path, one-shot override). The solver keeps it in sync with
+  `hypotheses.md`; the guard (§4a) reads it. See `doctrine/40-memory-and-state.md`.
 
 Raw evidence and auto files alongside:
 
 ```
 target.env   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/
-flags.txt    user=<hex> / root=<hex>  (auto-submitted; see §11)
-status.md    auto snapshot every ~10 min (read-only to the agent)
-writeup.md   metrics (report.sh, on exit)
+flags.txt    user=<hex> / root=<hex>  (recorded instantly; submitted per §11)
+status.md    auto snapshot every ~10 min (read-only to the agent); shows guard floor/live/effective
+writeup.md   live "Confirmed path" block (updated as steps confirm) + metrics (report.sh, on exit)
 failure_analysis.md/.json   why the run went as it did (analyze_run.sh, on exit)
 supervisor.md   reviewer verdicts, when oversee is running
 logs/        conv.jsonl (full conversation), tools.jsonl + raw/ (every tool call),
-             system_prompt.txt, meta.env, phases.log, flag_submit.log, session_*.log
-.claude/     settings.json (logging hook) + agents → ../../.claude/agents
+             accounting.json (guard counters — harness-owned; §4a), guard.log (guard actions),
+             guard.mode + .guard_secret (live-mode channel), .flag_mode (live|defer),
+             .submitted (flag dedup), system_prompt.txt, meta.env, phases.log, flag_submit.log, session_*.log
+.claude/     settings.json (logging + guard hook) + agents → ../../.claude/agents
 ```
 
-Resume reads, in order: `worldmodel.md` → `hypotheses.md` → tail of `journal.md` → `flags.txt`.
+Resume reads, in order: `worldmodel.md` → `hypotheses.md` → tail of `journal.md` → `flags.txt`
+(`ledger.json` / `logs/accounting.json` persist the guard state across the restart, so a frozen
+hypothesis stays frozen for the fresh instance).
 
 ---
 
@@ -213,6 +285,7 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `scripts/analyze_run.sh` | `scripts/analyze_run.sh [rundir|name]` | failure classifier → `failure_analysis.md/.json`. Auto on exit |
 | `scripts/rag.sh` | `scripts/rag.sh [-p] <query>` | cross-run memory: grep your own past runs. `-p` also searches `reference/` + PayloadsAllTheThings/GTFOBins. `SCOPE=runs/<slug>` to narrow |
 | `scripts/machine.sh` | `scripts/machine.sh <cmd> <name|id> [flag]` | HTB API util: `info` / `ip` / `spawn` / `active` / `stop` / `reset` / `submit`. Names resolve to ids |
+| `scripts/guard.sh` | `scripts/guard.sh <name> <off\|warn\|block\|show> ["reason"]` | set the **live** guard level (oversee/operator channel; §4a) or `show` floor/live/effective. Tagged so the solver can't forge it |
 | `scripts/burp.sh` | `scripts/burp.sh up|status|down|restart` | optional Burp headless over MCP; registers `mcp__burp__*`. Needs `BURP_MCP_TOKEN` |
 | `scripts/install_tools.sh` | `scripts/install_tools.sh [core|max|--check]` | install the Kali toolset |
 | `scripts/auto_pr.sh` | (Stop hook) | on a file-changing turn: branch → commit → push → PR → merge to `main` via `gh`. No-op on a clean tree. `AUTO_PR_DISABLE=1`, `AUTO_PR_MERGE`, `AUTO_PR_MODEL`. Dev-workflow only — nothing to do with a hunt. See [TOOLS.md](TOOLS.md) |
@@ -222,9 +295,12 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `tools/env-setting/check_token.sh` | `…` | validate the current token/env against the live API |
 
 Library (sourced, not run directly): `lib/bootstrap.sh` (loader; chain: common → tools_log → env →
-htb → run), `lib/common.sh` (colors, run-dir resolve, UTC time, flag + target.env helpers),
-`lib/tools_log.sh` (shared `logs/tools.jsonl` readers, `rc2_tl_*`), `lib/env.sh` (.env, SecLists),
-`lib/htb.sh` (token/resolve/spawn/VPN pre-flight/flag watcher), `lib/run.sh` (scaffold, prompts, run
+htb → run), `lib/guard_lib.sh` (dependency-free guard/JSON helpers — `rc2_json_update`,
+`rc2_guard_tag`, `rc2_guard_effective`, `rc2_is_frozen`; shared by the standalone hook and the API),
+`lib/common.sh` (colors, run-dir resolve, UTC time, flag + target.env helpers; sources guard_lib),
+`lib/tools_log.sh` (shared `logs/tools.jsonl` readers, `rc2_tl_*`), `lib/env.sh` (.env, SecLists,
+guard-default knobs), `lib/htb.sh` (token/resolve/spawn/VPN pre-flight/flag watcher + owned-status
+init), `lib/run.sh` (scaffold, prompts, run
 loop, status writer, oversee launch), `lib/hook_log.sh` (per-tool-call logging hook + anti-DoS repeat guard).
 
 **Full per-tool usage** — every flag, env knob, and example for the above — is in
@@ -363,16 +439,19 @@ drive the real service with the exploit `exploit-dev` builds.
 ```
 redcat2/
   hunt                      launcher
-  CLAUDE.md README.md OVERSEER.md .env.example .gitignore
+  CLAUDE.md README.md OVERSEER.md JUDGE.md .env.example .gitignore
   docs/GUIDE.md docs/TOOLS.md   this guide + the full per-tool reference
   doctrine/00..60           the brain (system prompt)
   .claude/agents/           researcher recon-analyst exploit-dev verifier reverser
   .claude/settings.local.json   personal auto-PR Stop hook       (gitignored)
-  lib/                      bootstrap common tools_log env htb run hook_log
+  lib/                      bootstrap guard_lib common tools_log env htb run hook_log
   reference/surface-signals.md  observation→environment→direction (consulted when ports are thin)
-  scripts/                  watch oversee report analyze_run rag machine burp install_tools conv_fmt auto_pr
+  scripts/                  watch oversee guard report analyze_run rag machine burp install_tools conv_fmt auto_pr
   scripts/lib/htb_api.sh    HTB API client
   tools/env-setting/        set_token_from_har check_token
   har/                      drop HARs here            (gitignored)
   runs/<slug>/              per-box workspace + memory (gitignored)
 ```
+
+`OVERSEER.md` = supervisor system prompt; `JUDGE.md` = the sameness-judge system prompt (§4a). Both are
+kept out of `doctrine/` so they never enter the solver's own prompt.
