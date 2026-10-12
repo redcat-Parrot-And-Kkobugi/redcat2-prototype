@@ -102,9 +102,12 @@ counts your experiments against it. **(2)** On a VERIFY-confirmed flag or step, 
 `writeup.md`, so this is how the solve chain is built as you go, not at the end. **(3)** When you
 freeze a hypothesis, set `freeze.frozen=true` with an **honest** `confidence` and a one-line `reason`:
 a `low`/`med` freeze may be thawed later if a new fact revives it, a `high` one should not be reopened
-without strong new evidence. `by` is `self` unless an overseer/arbiter set it. **Never** record here —
-or in `confirmed_path` — a win that VERIFY has not confirmed (the same evidence discipline as
-`worldmodel.md`).
+without strong new evidence. `by` is `self` for your own freezes. A freeze with **`by: arbiter`** was
+set by the independent judge because it ruled the hypothesis a rabbit hole; it is mirrored here for
+your view but held authoritatively by the harness, so flipping `frozen` back to `false` yourself does
+**nothing** — treat it as closed and move on, or, only if you are genuinely sure it is wrong, spend a
+one-shot `override`. **Never** record here — or in `confirmed_path` — a win that VERIFY has not
+confirmed (the same evidence discipline as `worldmodel.md`).
 
 ## Raw artifacts (not memory — evidence)
 

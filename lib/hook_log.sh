@@ -87,6 +87,9 @@ rc2_guard_pre() {
   local cur frozen fp exp ceil warn last_fp prev_rep new_rep
   cur="$(jq -r '.current_hypothesis // empty' "$LEDGER" 2>/dev/null)"; [ -n "$cur" ] || cur="unassigned"
   frozen="$(jq -r --arg h "$cur" '.hypotheses[$h].freeze.frozen // false' "$LEDGER" 2>/dev/null)"
+  # an arbiter freeze (set by the independent judge, in the hook-owned accounting file) also counts and
+  # the solver cannot clear it by editing its own ledger.json
+  [ "$frozen" = "true" ] || { [ -n "$(jq -r --arg h "$cur" '.arbiter_freezes[$h] // empty' "$ACCT" 2>/dev/null)" ] && frozen=true; }
   fp="$(rc2_fp "$input")"
   exp="$(jq -r '.global.experiments // 0' "$ACCT" 2>/dev/null)"
   ceil="$(jq -r '.global.ceiling // 999999' "$ACCT" 2>/dev/null)"

@@ -63,6 +63,13 @@ tmux new-session -d -s "$RC2_TMUX" -x 220 -y 50 2>/dev/null || true
 rc2_flag_watcher "$RUNDIR" & FLAG_WATCH_PID=$!
 # background status snapshotter: rewrites status.md every STATUS_INTERVAL (default 600s)
 rc2_status_writer "$RUNDIR" & STATUS_PID=$!
+# background sameness-judge watcher (P1-d): an independent judge freezes a hypothesis ruled a rabbit
+# hole. Runs when enforcement is enabled (RC2_GUARD!=off) or RC2_GUARD_WATCH=1; NO_GUARD_WATCH=1 forces off.
+GUARD_WATCH_PID=""
+if { [ "${RC2_GUARD:-off}" != "off" ] || [ "${RC2_GUARD_WATCH:-0}" = "1" ]; } && [ "${NO_GUARD_WATCH:-0}" != "1" ]; then
+  rc2_guard_watcher "$RUNDIR" & GUARD_WATCH_PID=$!
+  echo "[guard] sameness watcher on (judge=${GUARD_JUDGE_MODEL:-sonnet}, every ${GUARD_WATCH_INTERVAL:-180}s, stall=${RC2_STALL:-12})"
+fi
 
 # supervisor/critic alongside the hunt: a herdr sibling pane when running inside herdr, else a
 # tmux session (default). It reads the logs + living files and writes supervisor.md on drift.
@@ -75,6 +82,7 @@ cleanup() {
   rc2_flag_scan_once "$RUNDIR" 2>/dev/null || true                 # final sweep: submit a flag captured since the last poll
   [ -n "${FLAG_WATCH_PID:-}" ] && kill "$FLAG_WATCH_PID" 2>/dev/null || true
   [ -n "${STATUS_PID:-}" ] && kill "$STATUS_PID" 2>/dev/null || true
+  [ -n "${GUARD_WATCH_PID:-}" ] && kill "$GUARD_WATCH_PID" 2>/dev/null || true
   rc2_write_status "$RUNDIR" 2>/dev/null || true                   # final snapshot
   rc2_stop_oversee                                                 # stop supervisor (herdr pane or tmux)
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
