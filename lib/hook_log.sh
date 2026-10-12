@@ -28,7 +28,22 @@ is_guarded(){ [ -n "$1" ] && ! printf '%s' "$1" | grep -qiE "$EXEMPT_RE" && prin
 # thresholds can be calibrated. Gating (warn/block) is opt-in: RC2_GUARD=off (default) | warn | block.
 # This is the "accounting" half of the intent/accounting split: the agent owns ledger.json, the hook
 # owns accounting.json and never trusts the agent's hand-written JSON for its counters.
-GUARD_MODE="${RC2_GUARD:-off}"
+# Effective guard mode = the STRONGER of two tiers: the operator's FLOOR (RC2_GUARD env — the solver
+# and the supervisor cannot go below it) and the supervisor's LIVE level (logs/guard.mode, honoured
+# only if its tag matches logs/.guard_secret, a dotfile the solver is forbidden to read). off<warn<block.
+_mode_rank(){ case "$1" in block) echo 3;; warn) echo 2;; *) echo 1;; esac; }
+rc2_effective_guard(){
+  local floor="${RC2_GUARD:-off}" live="off" gm="$logdir/guard.mode" sec="$logdir/.guard_secret" m t want
+  case "$floor" in off|warn|block) ;; *) floor=off;; esac
+  if [ -s "$gm" ] && [ -s "$sec" ]; then
+    m="$(sed -n 's/^mode=//p' "$gm" 2>/dev/null | head -1 | tr -cd 'a-z')"
+    t="$(sed -n 's/^tag=//p'  "$gm" 2>/dev/null | head -1 | tr -cd '0-9a-f')"
+    want="$(printf '%s%s' "$m" "$(cat "$sec" 2>/dev/null)" | md5sum 2>/dev/null | cut -c1-32)"
+    [ -n "$m" ] && [ -n "$t" ] && [ "$t" = "$want" ] && case "$m" in off|warn|block) live="$m";; esac
+  fi
+  if [ "$(_mode_rank "$live")" -gt "$(_mode_rank "$floor")" ]; then echo "$live"; else echo "$floor"; fi
+}
+GUARD_MODE="$(rc2_effective_guard)"
 LEDGER="$cwd/ledger.json"
 ACCT="$logdir/accounting.json"
 REPEAT_FREEZE="${RC2_REPEAT_FREEZE:-4}"

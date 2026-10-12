@@ -74,6 +74,12 @@ MD
 $(rc2_utc) START — target ${MACHINE_NAME:-$TARGET_IP} ($TARGET_IP). First pass: ORIENT says information is the bottleneck; open with full-surface enumeration.
 MD
   : > "$RUNDIR/flags.txt" 2>/dev/null || true
+  # guard live-mode channel secret: oversee/operator tag logs/guard.mode with this; the solver is
+  # forbidden to read it (doctrine). Seed once; stable across relaunches so a resume keeps the channel.
+  if [ ! -s "$RUNDIR/logs/.guard_secret" ]; then
+    ( umask 077; printf '%s' "$( { head -c16 /dev/urandom 2>/dev/null; echo "$$ $(date +%s%N 2>/dev/null) $RANDOM"; } | md5sum 2>/dev/null | cut -c1-32)" > "$RUNDIR/logs/.guard_secret" ) 2>/dev/null || true
+    chmod 600 "$RUNDIR/logs/.guard_secret" 2>/dev/null || true
+  fi
   # machine-readable state (P0). Two files on purpose (see doctrine 40):
   #   ledger.json          = the agent's INTENT (model-owned; mirrors hypotheses.md)
   #   logs/accounting.json = the hook's COUNTERS (plumbing-owned; agent never writes it)
@@ -264,6 +270,7 @@ rc2_write_status() {
     grep -nE '^### H' "$rundir/hypotheses.md" 2>/dev/null | sed 's/^[0-9]*:/  /' | head -12
     echo
     echo "## ledger (machine state)"
+    echo "- guard: floor=${RC2_GUARD:-off} · live=$( [ -s "$L/guard.mode" ] && { sed -n 's/^mode=//p' "$L/guard.mode" 2>/dev/null | head -1; } || echo none )  (effective = stronger of the two)"
     if [ -s "$rundir/ledger.json" ]; then
       jq -r '
         "- current: \(.current_hypothesis // "—")   confirmed_path: \(.confirmed_path | length)",
