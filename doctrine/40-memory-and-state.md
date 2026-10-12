@@ -25,6 +25,11 @@ reason from. Structure it so the top is the most load-bearing:
 ```
 # World Model — <machine> (<ip>)
 ## Access held        <- shells/creds you currently possess, as which principal, on which host
+## Privilege map      <- the ladder (10-hunt-loop → orient by the privilege delta). One line per
+#                        principal/process/service/container: its privilege (uid, caps, host access,
+#                        trust, secrets/actions it holds) and — for YOUR current principal — what you
+#                        can and cannot do. Mark which of these run ABOVE you and whether any input you
+#                        control reaches them: those are your elevation candidates.
 ## Credentials        <- user:pass / hashes / keys / tokens, and what each unlocks (verified?)
 ## Services & versions <- port -> service/version, with the one fact that matters per service
 ## Hosts & topology    <- the target, any pivots, trust relationships; tag each host's scope (in-scope | conditional | pending | out-of-scope, per 00-prime-directive)
@@ -36,6 +41,15 @@ not here. Tag each fact's basis — `observed` (you saw it happen or read it dir
 `inferred` (deduced from other facts, e.g. "JDK ≥11 because the CORBA class is absent") — so a
 fresh instance knows at a glance what rests on direct evidence and what rests on a chain that a
 later fact could break.
+
+**Recording a negative** ("X closed / not present / a mock / refuted") needs the same discipline as
+a positive, plus two extra tags, because a shallow negative wrongly prunes the search space
+(`00` → evidence of absence): write **what test established it** and a **confidence** — e.g.
+`CodeBuild = real but no docker.sock [observed · tested: 1 build, privilegedMode untried · conf: low]`
+vs `ECS drops all mount/priv fields [observed · tested: host-vol + dockerVolumeConfiguration +
+privileged + linuxParameters, 20+ runs · conf: high]`. A `low`-confidence negative is a **re-open
+candidate**, not a wall — it is exactly what the blocker re-audit (`00` → Done) and the surrender
+gate re-test first. Never let a one-glance dismissal sit here unqualified as if it were proven.
 
 ### `hypotheses.md` — what MIGHT break it
 The ranked attack board. One block per hypothesis:

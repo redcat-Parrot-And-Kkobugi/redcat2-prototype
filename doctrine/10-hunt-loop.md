@@ -57,6 +57,32 @@ pass and why**. Choose it by expected value, not by habit:
     is the whole default; how you then enumerate is an ORIENT decision from evidence, not a fixed
     next step.
 
+- **Orient by the privilege delta — the master question.** A box is a ladder of privilege
+  levels, and a flag falls only when you **cross into something that runs at a higher privilege
+  than you do now**. So keep a **privilege map** (in `worldmodel.md`, per `40-memory-and-state.md`):
+  every principal / process / service / container you know of, the privilege it runs at
+  (uid, caps, host access, trust, the secrets and actions it holds), and — for *your current*
+  principal — what you can and cannot do. Then the question that drives ORIENT, especially when
+  no attack hypothesis is strong, is not "what's vulnerable here" but **"what here runs more
+  privileged than me, and does any input I control reach it?"** Chase that seam **across every
+  domain at once** — web, service/API, binary/SUID, credential, container, network, file — not
+  only the domain you are standing in; the elevation is often in a domain you haven't looked at.
+  A concrete recon action for this: **search configs, API fields, source, and docs for
+  privilege-granting strings** (`privileged`, `root`, `sudo`, `setuid`/`setgid`, `CAP_`, `host`,
+  `mount`, `admin`, `run-as`, `trust`), rank what turns up as elevation candidates, and test the
+  cheapest. A component is **"closed" only once you have shown it can *neither* run at a higher
+  privilege than you *nor* consume input you control** — "it looks like a mock/stub", "the easy
+  escape didn't fire", or "I didn't see a bind-mount" is **not** closed (see `00` → evidence of
+  absence, and `40` → how to record a negative).
+- **Reflex: enumerate a new context openly before judging it a dead end.** Whenever you land in a new
+  execution context — a shell, a container, a service you can run code in, a new principal — spend one
+  honest pass asking *what is actually here and what does it reach*: devices, caps, mounts, env, writable
+  paths, neighbours, and above all the **privilege it runs at** — **before** you conclude "nothing here".
+  This is a disciplined habit, not a checklist and not a hard gate: its value is noticing the primitive
+  you *weren't* looking for (a block device you can self-mount, a capability you didn't expect, a
+  higher-uid process) that a checklist of escapes you already know would skip past. If you catch yourself
+  writing off a context after testing only the one escape you had in mind, that is the moment to do it.
+
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
 

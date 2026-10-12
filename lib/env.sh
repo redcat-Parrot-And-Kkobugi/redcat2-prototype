@@ -29,7 +29,9 @@ rc2_load_env() {
   : "${RC2_GATE_MODE:=block}"      # mode oversee escalates the live tier to on consensus
   : "${GUARD_WATCH_INTERVAL:=180}" # sameness-judge watcher cadence, seconds
   : "${GUARD_JUDGE_MODEL:=sonnet}" # sameness judge model (haiku = cheaper + coarser; sonnet = safer)
-  export RC2_CEIL RC2_WARN RC2_BUDGET_DEFAULT RC2_REPEAT_FREEZE RC2_STALL RC2_GATE_N RC2_GATE_MODE GUARD_WATCH_INTERVAL GUARD_JUDGE_MODEL
+  : "${RC2_SURRENDER_MAX:=2}"      # max times the surrender gate may re-open a blocker and relaunch
+  : "${RC2_SURRENDER_MODEL:=opus}" # model for the independent surrender-gate re-audit (high stakes → opus)
+  export RC2_CEIL RC2_WARN RC2_BUDGET_DEFAULT RC2_REPEAT_FREEZE RC2_STALL RC2_GATE_N RC2_GATE_MODE GUARD_WATCH_INTERVAL GUARD_JUDGE_MODEL RC2_SURRENDER_MAX RC2_SURRENDER_MODEL
 }
 
 _rc2_is_ip() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
