@@ -101,7 +101,7 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
 | `NO_STOP` | 0 | `1` = on solve, don't terminate the HTB machine (keep the box up) |
 | `VPN_AUTOFIX` | 0 | `1` = if pre-flight finds the wrong VPN server (HTB_OVPN mismatch, or target routes but is host-unreachable), auto-reconnect to `HTB_OVPN` |
-| `CYBER_MAX_RETRIES` | 3 | relaunches allowed when the agent is cyber-safeguard-flagged before the loop stops (content flags re-trip, so this caps churn) |
+| `CYBER_MAX_RETRIES` | 10 | relaunches allowed when the agent is cyber-safeguard-flagged before the loop stops (content flags re-trip, so this caps churn) |
 | `CYBER_FALLBACK_MODEL` | — | on a cyber-safeguard flag, switch the orchestrator to this (less-restricted) model for the next session |
 | `OVERSEE_FALLBACK_MODEL` | — | model the supervisor retries a cyber-flagged review with (one retry); `scripts/oversee.sh` only |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
