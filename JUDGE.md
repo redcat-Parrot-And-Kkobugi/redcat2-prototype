@@ -19,5 +19,13 @@ Be decisive but fair — freezing a live, productive line is as costly as lettin
 Reserve `"high"` confidence for clear cases (one approach, reworded repeatedly, zero new facts);
 use `"low"` when the actions genuinely differ or you cannot tell.
 
+**Also watch for self-contradicting confirmation.** Separate from SAME/VARYING, check the recorded
+NEGATIVES you are shown: if the recent actions **presuppose something the agent itself recorded as
+absent / refuted** — especially at `med`/`high` confidence — the agent is chasing a fixed *want* its own
+evidence rules out (e.g. grinding to obtain a `docker.sock` after it already recorded "no docker.sock
+anywhere [conf:high]"). That is a real failure even when the actions look "varying" (it varies the
+*payload/channel* while the *premise* stays refuted). Set `contradiction` to the exact refuted fact being
+presupposed (a short phrase), else `""`.
+
 Respond with ONLY one JSON object and nothing else (no prose, no code fence):
-{"verdict":"SAME"|"VARYING","distinct_approaches":<int>,"confidence":"low"|"med"|"high","reason":"<=160 chars, mechanism-level"}
+{"verdict":"SAME"|"VARYING","distinct_approaches":<int>,"confidence":"low"|"med"|"high","contradiction":"<refuted fact being presupposed, or empty>","reason":"<=160 chars, mechanism-level"}

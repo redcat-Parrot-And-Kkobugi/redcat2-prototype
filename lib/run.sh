@@ -369,13 +369,15 @@ rc2_run_sameness_judge() {
   target="$(jq -r --arg h "$h" '.hypotheses[$h].target // "?"' "$led" 2>/dev/null)"
   recent="$(grep '"event":"pre"' "$J" 2>/dev/null | tail -24 | jq -r '(.command // .tool // "?")' 2>/dev/null | cut -c1-200)"
   wm="$(tail -40 "$rundir/worldmodel.md" 2>/dev/null)"
+  local negs; negs="$(grep -iE 'closed|refuted|mock|absent|not present|no .*(sock|mount|priv)|dropped|denied|impossible|conf:[[:space:]]*(med|high)' "$rundir/worldmodel.md" "$rundir/hypotheses.md" 2>/dev/null | cut -c1-200 | head -30)"
   # prompt built with printf %s so logged commands (which may contain $(), backticks) are NEVER expanded
-  prompt="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s' \
+  prompt="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s' \
     "Hypothesis under scrutiny ($h): \"$claim\"  (target: $target)." \
     "Recent actions taken on this hypothesis (most recent last):" "$recent" \
     "Current worldmodel.md tail (VERIFIED facts only):" "$wm" \
-    "Decide SAME (rabbit hole) vs VARYING (genuine exploration). Respond with ONLY the JSON object:" \
-    '{"verdict":"SAME"|"VARYING","distinct_approaches":<int>,"confidence":"low"|"med"|"high","reason":"<=160 chars"}')"
+    "Recorded NEGATIVES (facts the agent marked absent/refuted — a recent action that PRESUPPOSES one is self-contradiction):" "$negs" \
+    "Decide SAME vs VARYING, and flag any self-contradiction. Respond with ONLY the JSON object:" \
+    '{"verdict":"SAME"|"VARYING","distinct_approaches":<int>,"confidence":"low"|"med"|"high","contradiction":"<refuted fact presupposed, or empty>","reason":"<=160 chars"}')"
   rc2_claude_oneshot "$model" "$RC2_ROOT/JUDGE.md" "${GUARD_JUDGE_TIMEOUT:-120}" "$prompt" | grep -oE '\{[^{}]*"verdict"[^{}]*\}' | head -1
 }
 
@@ -417,6 +419,25 @@ rc2_guard_watcher() {
       verdict="$(printf '%s' "$v" | jq -r '.verdict // empty' 2>/dev/null)"
       conf="$(printf '%s' "$v" | jq -r '.confidence // "med"' 2>/dev/null)"
       reason="$(printf '%s' "$v" | jq -r '.reason // "sameness judge"' 2>/dev/null | cut -c1-160)"
+      # self-contradiction signal (fires on EITHER verdict): agent presupposes a fact it recorded
+      # absent/refuted → tell it, via a supervisor tick, to re-test that negative or open-enumerate.
+      local contra cfp last_cfp
+      contra="$(printf '%s' "$v" | jq -r '.contradiction // ""' 2>/dev/null | cut -c1-160)"
+      if [ -n "$contra" ] && [ "$contra" != "null" ]; then
+        cfp="$(printf '%s' "$contra" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"
+        last_cfp="$(jq -r '.supervisor.last_contradiction_fp // ""' "$acct" 2>/dev/null)"
+        if [ -n "$cfp" ] && [ "$cfp" != "$last_cfp" ]; then   # debounce: only on a NEW contradiction
+          rc2_write_supervisor "$rundir" "self-contradiction" "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s' \
+            "_the sameness judge caught you presupposing a fact you recorded as absent/refuted_" \
+            "STATUS: minor-drift" \
+            "FOCUS: contradiction-$cfp" \
+            "READ: your recent actions presuppose '$contra' — but your own worldmodel records it absent/refuted." \
+            "STOP: chasing that want." \
+            "DO NEXT: either RE-TEST that negative properly if your evidence for it was shallow (doctrine 00/40 — a shallow negative is a hypothesis, not a fact), or DROP the want and OPEN-ENUMERATE the context (doctrine 10 — do not just check for the primitive you wanted; list what is actually present).")" >/dev/null
+          rc2_json_update "$acct" '.supervisor.last_contradiction_fp=$f' --arg f "$cfp"
+          printf '%s judge: CONTRADICTION on %s — presupposing refuted: %s\n' "$(rc2_utc)" "$cur" "$contra" >> "$rundir/logs/guard.log" 2>/dev/null || true
+        fi
+      fi
       if [ "$verdict" = "SAME" ] && { [ "$conf" = "med" ] || [ "$conf" = "high" ]; }; then
         rc2_guard_commit_freeze "$rundir" "$cur" "$conf" "$reason"
       else

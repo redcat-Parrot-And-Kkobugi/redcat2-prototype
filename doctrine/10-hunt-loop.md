@@ -80,8 +80,14 @@ pass and why**. Choose it by expected value, not by habit:
   paths, neighbours, and above all the **privilege it runs at** — **before** you conclude "nothing here".
   This is a disciplined habit, not a checklist and not a hard gate: its value is noticing the primitive
   you *weren't* looking for (a block device you can self-mount, a capability you didn't expect, a
-  higher-uid process) that a checklist of escapes you already know would skip past. If you catch yourself
-  writing off a context after testing only the one escape you had in mind, that is the moment to do it.
+  higher-uid process) that a checklist of escapes you already know would skip past.
+  **Checking for the one primitive you came hoping to find — a `docker.sock`, a specific bind-mount — is
+  NOT enumeration; it is confirming a *want*.** Enumerate what is *actually present* (`ls -la /dev`,
+  `capsh --print`, `mount`, `/proc/self/status`, env, writable paths, neighbours) and let the inventory
+  pick the primitive. If you came in wanting `docker.sock` and your own evidence already says it is
+  absent, the move is not to keep trying to produce it — it is to list what *is* there and escalate with
+  that. Catching yourself write off a context after testing only the escape you had in mind is the
+  signal to do this.
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
