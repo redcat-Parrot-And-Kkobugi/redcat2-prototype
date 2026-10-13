@@ -20,6 +20,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
 [ -f "$ROOT/.env" ] && { set -a; . "$ROOT/.env"; set +a; }
 unset ANTHROPIC_API_KEY
 : "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN in .env}"
+# relaunch/tick cache efficiency (this pane doesn't call rc2_load_env; mirror lib/env.sh's policy so the
+# supervisor reuses its byte-stable prefix across ticks). OAuth above makes 1h eligible.
+: "${CLAUDE_CODE_PROMPT_CACHE_TTL:=1h}"; : "${DISABLE_AUTOUPDATER:=1}"
+export CLAUDE_CODE_PROMPT_CACHE_TTL DISABLE_AUTOUPDATER
 
 usage(){ echo "usage: oversee.sh [-s|--slug <name>] [-m|--model <model>] [-d|--directive <text>] [-i|--interval <sec>] [--oneshot] [<slug> [directive]]" >&2; }
 _slug="" _model="" _directive="" _interval="" _oneshot=""; pos=()
