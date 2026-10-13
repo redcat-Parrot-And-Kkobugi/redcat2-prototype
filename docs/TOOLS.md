@@ -29,7 +29,7 @@ The launcher. Runs one autonomous hunt (headless Claude Code) against a target u
 | arg | default | meaning |
 |---|---|---|
 | `<machine_name\|ip>` | — (required) | HTB name (API resolves + spawns; needs a token) or raw IP (IP-only mode: no spawn/submit) |
-| `[orchestrator_model]` | `opus` | orchestrator model; sub-agents pick their own |
+| `[orchestrator_model]` | `claude-opus-4-8` | orchestrator model; sub-agents pick their own. `rc2_pin_model` caps opus at 4.8 (bare `opus`/`claude-opus-5+` → `claude-opus-4-8`; sonnet/haiku pass through) |
 | `[extra notes]` | — | free-text hint appended to the launch prompt |
 | `--fresh` | — | archive any existing run for this target to `runs/<slug>.bak.<epoch>`, start clean |
 
@@ -51,6 +51,13 @@ The launcher. Runs one autonomous hunt (headless Claude Code) against a target u
 | `IP_WAIT_INTERVAL` | 180 | seconds between IP polls (15×180s = 45 min) |
 | `HAR_SRC` | Windows DevTools folder | where to import the newest HAR from |
 | `FRESH` | — | same as `--fresh` |
+| `RC2_NO_PIN` / `RC2_PIN_MODEL` | `0` / `claude-opus-4-8` | disable the opus cap / change its target |
+| `RC2_CYBER_SPIN` / `RC2_HANG_KILL` / `RC2_HEARTBEAT` | `10` / `600` / `60` | per-attempt watchdog: cyber-spin kill / no-output wedge kill / heartbeat cadence (s); `0` disables each |
+| `RC2_JOURNAL_KEEP` | `200` | roll `journal.md` past N lines into `journal.archive.md` at launch (`0` = off) |
+| `NO_HEALTH` / `HEALTH_INTERVAL` / `HEALTH_PORTS` / `HEALTH_IP_RECHECK` | `0` / `30` / `22 80 443` / `90` | target-health watcher: disable / probe cadence / probed ports / HTB IP-recheck while down (rewrites `target.env` on respawn) |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL` / `..._SUBAGENT_...` / `DISABLE_AUTOUPDATER` | `1h` / `1h` / `1` | server-side prompt-cache TTL (relaunch reuse) / sub-agent TTL / skip auto-update between relaunches |
+
+> Full env/flag reference (incl. all guard knobs) is **GUIDE §3**; guard knobs also in GUIDE §4a.
 
 ```bash
 ./hunt Management                      # name → resolve/spawn, Opus 4.8 orchestrator
@@ -428,9 +435,9 @@ Loaded by `lib/bootstrap.sh`; edit the function, not the launcher.
 | `lib/guard_lib.sh` | dependency-free, side-effect-free guard/JSON helpers — `rc2_json_update` (atomic fail-open JSON RMW), `rc2_guard_tag`, `rc2_guard_effective` (floor⊔live), `rc2_mode_rank`, `rc2_is_frozen` (ledger∪arbiter), `rc2_guard_core_on` (is any enforcement layer active). Sourced by `common.sh` **and** directly (guarded) by the standalone hook so both share one implementation |
 | `lib/common.sh` | sources `guard_lib`; ANSI colors, `rc2_resolve_rundir`, `rc2_to_epoch`, `rc2_utc`, `rc2_load_target`, `rc2_write_supervisor` (bump-tick + write supervisor.md, shared by oversee + surrender gate), and the flag helpers (`RC2_FLAG_RE`, `rc2_flag_value`, `rc2_hex_in`, `rc2_both_flags`, `rc2_both_accepted`, `rc2_solved` = both flags *accepted*, gates machine teardown) |
 | `lib/tools_log.sh` | shared `logs/tools.jsonl` readers (`rc2_tl_posts`/`_count`/`_first_ts`/`_last_ts`/`_dur_ms`/`_recent`) used by report/analyze/status/flag-scan |
-| `lib/env.sh` | `.env` loading, SecLists, and the **single source** of guard/calibration default knobs (`RC2_CEIL/WARN/BUDGET_DEFAULT/REPEAT_FREEZE/STALL/GATE_N/GATE_MODE`, `GUARD_WATCH_INTERVAL/JUDGE_MODEL`), all exported so the per-call hook inherits them |
+| `lib/env.sh` | `.env` loading, SecLists, and the **single source** of guard/calibration default knobs (`RC2_CEIL/WARN/BUDGET_DEFAULT/REPEAT_FREEZE/STALL/GATE_N/GATE_MODE`, `GUARD_WATCH_INTERVAL/JUDGE_MODEL`), all exported so the per-call hook inherits them. Also the **prompt-cache TTL** defaults (`CLAUDE_CODE_PROMPT_CACHE_TTL`/`CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`=`1h`, `DISABLE_AUTOUPDATER`=`1`) and **`rc2_pin_model`** — caps opus at 4.8 (bare `opus` / `claude-opus-5+` → `claude-opus-4-8`; sonnet/haiku pass through; `RC2_NO_PIN`/`RC2_PIN_MODEL` override) |
 | `lib/htb.sh` | token refresh, machine resolve/spawn, VPN pre-flight, `rc2_htb_owned_init` (reads HTB owned-status → `live`/`defer` submit mode), and `rc2_flag_watcher` — submits user/root flags via two channels (`flags.txt` + enforced scan of logged `user.txt`/`root.txt` reads); dedup in `logs/.submitted` incl. per-value `kind:bad:<flag>` so a rejected flag isn't re-hammered; token-error (not wrong-flag) retries |
-| `lib/run.sh` | run-dir scaffold (case-preserving slug; seeds the 3 living files + `ledger.json` + `logs/accounting.json` + guard secret), prompt assembly, resilient run loop + **surrender gate** on a clean-exit blocker (`rc2_surrender_gate`/`_directive`, `SURRENDER.md`), status writer (+ live confirmed-path into `writeup.md`), the sameness-judge watcher (`rc2_guard_watcher`) incl. the `contradiction` signal (`rc2_guard_contradiction_signal`) and the arbiter freeze (`rc2_guard_commit_freeze`), `rc2_negatives` (structured `ledger.negatives` + free-text, read by judge + surrender gate), `rc2_claude_oneshot` (out-of-band repo-isolated `claude -p`, shared by judge + surrender gate), oversee launch |
+| `lib/run.sh` | run-dir scaffold (case-preserving slug; seeds the 3 living files + `ledger.json` + `logs/accounting.json` + guard secret), prompt assembly, resilient run loop + **surrender gate** on a clean-exit blocker (`rc2_surrender_gate`/`_directive`, `SURRENDER.md`), status writer (+ live confirmed-path into `writeup.md`), the sameness-judge watcher (`rc2_guard_watcher`) incl. the `contradiction` signal (`rc2_guard_contradiction_signal`) and the arbiter freeze (`rc2_guard_commit_freeze`), `rc2_negatives` (structured `ledger.negatives` + free-text, read by judge + surrender gate), `rc2_claude_oneshot` (out-of-band repo-isolated `claude -p`, shared by judge + surrender gate), oversee launch. Resilience helpers: **`_rc2_attempt_guard`** (per-attempt watchdog — heartbeat `RC2_HEARTBEAT`, cyber-spin kill `RC2_CYBER_SPIN`, no-output wedge kill `RC2_HANG_KILL`), **`rc2_rotate_journal`** (roll `journal.md`→`journal.archive.md` past `RC2_JOURNAL_KEEP`), **`rc2_health_watcher`** (+`_rc2_recent_self_reset`) — `target_health.md` UP/DOWN/MOVED and, on a respawn IP, rewrites `target.env` via `htb_active` (`HEALTH_INTERVAL`/`HEALTH_PORTS`/`HEALTH_IP_RECHECK`, `NO_HEALTH`) |
 | `lib/hook_log.sh` | per-run PreToolUse/PostToolUse hook (a standalone process per call): force-logs every call to `logs/tools.jsonl` + `logs/raw/`, blocks identical-command/identical-result repeats (anti-stuck/throttle/DoS), and runs the guard accounting + warn/block gating (GUIDE §4a). Sources `guard_lib.sh` guarded so it can never be broken by the lib |
 
 ---
