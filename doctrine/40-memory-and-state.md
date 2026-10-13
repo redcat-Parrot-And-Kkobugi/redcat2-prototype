@@ -105,6 +105,9 @@ Shape (create it if missing — `H<n>` keys mirror the board exactly):
       "how": "SSRF octal-IP bypass -> IMDS -> nimbus-web-role creds -> aws sqs send-message yaml.load os.system gadget (non-blocking setsid)",
       "yields": "shell as worker in tmux <tmux_base>_main (verify: id -> uid=1000)", "at": "<utc>" }
   ],
+  "negatives": [
+    { "fact": "no docker.sock in any reachable container", "confidence": "high", "tested": "find / + probe :2375 on host/floci, 3 contexts" }
+  ],
   "override": null
 }
 ```
@@ -130,7 +133,13 @@ set by the independent judge because it ruled the hypothesis a rabbit hole; it i
 your view but held authoritatively by the harness, so flipping `frozen` back to `false` yourself does
 **nothing** — treat it as closed and move on, or, only if you are genuinely sure it is wrong, spend a
 one-shot `override`. **Never** record here — or in `confirmed_path` — a win that VERIFY has not
-confirmed (the same evidence discipline as `worldmodel.md`).
+confirmed (the same evidence discipline as `worldmodel.md`). **(4)** Mirror your **load-bearing
+negatives** — the "X is absent / refuted / closed" facts that *prune the search space* — into
+`negatives` as `{fact, confidence, tested}` (the same depth+confidence discipline as `00` → evidence of
+absence). The harness reads this list: the surrender gate re-opens the weakest ones before accepting a
+blocker, and the sameness judge flags when your recent actions **presuppose** one (you chasing a want
+your own evidence refutes). A `low`/`med`-confidence negative here is explicitly a re-open candidate, so
+be honest about `tested` — a one-glance dismissal recorded as `high` is how the real path gets pruned.
 
 ## Raw artifacts (not memory — evidence)
 
