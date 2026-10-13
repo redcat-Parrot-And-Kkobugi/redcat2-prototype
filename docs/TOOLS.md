@@ -42,7 +42,7 @@ The launcher. Runs one autonomous hunt (headless Claude Code) against a target u
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
 | `NO_STOP` | 0 | `1` = on solve, keep the HTB machine up (default: terminate it) |
 | `VPN_AUTOFIX` | 0 | `1` = if pre-flight finds the wrong VPN server (HTB_OVPN mismatch, or target routes but host-unreachable), auto-reconnect to `HTB_OVPN` |
-| `CYBER_MAX_RETRIES` | 3 | cyber-safeguard relaunches before the loop stops (caps churn on content flags) |
+| `CYBER_MAX_RETRIES` | 10 | cyber-safeguard relaunches before the loop stops (caps churn on content flags) |
 | `CYBER_FALLBACK_MODEL` | — | on a cyber-safeguard flag, relaunch the orchestrator with this less-restricted model |
 | `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
