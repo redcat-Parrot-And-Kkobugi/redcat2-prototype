@@ -269,9 +269,10 @@ The **three living files** are rewritten every loop:
 - `journal.md` — append-only decision trail (what/why/result/next). The anti-rabbit-hole record.
 - `ledger.json` — the machine-readable **mirror** of the board (current hypothesis, per-hypothesis
   status/budget/freeze, confirmed path, one-shot override). The solver keeps it in sync with
-  `hypotheses.md`; the guard (§4a) reads it. Its **`confirmed_path`** entries are **runnable** — each
-  carries a `script` (`exploit/*.sh`, re-pulling live creds/flags) and what it `yields`, so a resume
-  **replays** the proven chain (`scripts/replay.sh`) instead of re-deriving it. See `doctrine/40-memory-and-state.md`.
+  `hypotheses.md`; the guard (§4a) reads it. Its **`confirmed_path`** entries record each proven step's
+  `how` (method) + `yields` (success signal), so on resume the solver **re-walks** the proven chain with
+  its own reasoning+tools — adapting to the respawned instance's fresh creds/IDs/flags — instead of
+  re-deriving it from the journal. See `doctrine/40-memory-and-state.md` → Resume.
 
 Raw evidence and auto files alongside:
 
@@ -309,7 +310,6 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `scripts/rag.sh` | `scripts/rag.sh [-p] <query>` | cross-run memory: grep your own past runs. `-p` also searches `reference/` + PayloadsAllTheThings/GTFOBins. `SCOPE=runs/<slug>` to narrow |
 | `scripts/machine.sh` | `scripts/machine.sh <cmd> <name|id> [flag]` | HTB API util: `info` / `ip` / `spawn` / `active` / `stop` / `reset` / `submit`. Names resolve to ids |
 | `scripts/guard.sh` | `scripts/guard.sh <name> <off\|warn\|block\|show> ["reason"]` | set the **live** guard level (oversee/operator channel; §4a) or `show` floor/live/effective. Tagged so the solver can't forge it |
-| `scripts/replay.sh` | `scripts/replay.sh <name>` | re-run the `confirmed_path` exploit scripts (from `ledger.json`) in order to **re-establish a proven access chain** on the live box instead of re-deriving it; scripts re-pull creds/flags so it survives a respawn. `REPLAY_STEP_TIMEOUT` caps each step |
 | `scripts/burp.sh` | `scripts/burp.sh up|status|down|restart` | optional Burp headless over MCP; registers `mcp__burp__*`. Needs `BURP_MCP_TOKEN` |
 | `scripts/install_tools.sh` | `scripts/install_tools.sh [core|max|--check]` | install the Kali toolset |
 | `scripts/auto_pr.sh` | (Stop hook) | on a file-changing turn: branch → commit → push → PR → merge to `main` via `gh`. No-op on a clean tree. `AUTO_PR_DISABLE=1`, `AUTO_PR_MERGE`, `AUTO_PR_MODEL`. Dev-workflow only — nothing to do with a hunt. See [TOOLS.md](TOOLS.md) |

@@ -102,7 +102,8 @@ Shape (create it if missing — `H<n>` keys mirror the board exactly):
   },
   "confirmed_path": [
     { "h": "H2", "summary": "worker RCE via unsafe yaml.load -> shell as worker",
-      "script": "exploit/foothold.sh", "yields": "shell as worker in tmux <tmux_base>_main", "at": "<utc>" }
+      "how": "SSRF octal-IP bypass -> IMDS -> nimbus-web-role creds -> aws sqs send-message yaml.load os.system gadget (non-blocking setsid)",
+      "yields": "shell as worker in tmux <tmux_base>_main (verify: id -> uid=1000)", "at": "<utc>" }
   ],
   "override": null
 }
@@ -113,13 +114,15 @@ switch>", "nonce": "<unique string>" }` **only** to push past a guard block once
 A new block needs a fresh `nonce`; repeated overrides on the same hypothesis escalate.
 Rules: **(1)** `current_hypothesis` always names the block you are pursuing *right now* — the hook
 counts your experiments against it. **(2)** On a VERIFY-confirmed flag or step, append one
-`confirmed_path` entry — a one-line `summary` (copied **live** into `writeup.md**, so the solve chain
-builds as you go, not at the end) **plus, when the step is reproducible, a runnable `script` and what it
-`yields`.** Save that script to `exploit/<name>.sh` and make it **re-establish the step from scratch
-against the LIVE target** — read `target_ip` from `target.env` and **re-pull every dynamic value each
-run** (IMDS/STS creds, tokens, a freshly-rotated flag); never hardcode a cred/IP/flag that changes per
-spawn. That is what lets a later session **replay** the chain instead of re-deriving it (see Resume
-below) — the single biggest speed-up on a box that respawns. **(3)** When you
+`confirmed_path` entry: a one-line `summary` (copied **live** into `writeup.md`, so the solve chain
+builds as you go, not at the end), the **`how`** — the method at a level you could re-execute (the
+primitive, the vector, the knobs that matter — not a command transcript), and the **`yields`** — the
+observable signal that proves the step re-succeeded (e.g. `id -> uid=1000`). This is a plan a *reasoning*
+session **re-walks**, not a frozen script: the live instance differs every spawn (rotated creds, new
+container IDs, a fresh flag), so the durable asset is the *method*, re-executed with judgment and
+re-verified. You MAY drop a helper script in `exploit/` for a purely mechanical sub-step (e.g. re-pulling
+IMDS creds) and mention it in `how`, but treat it as an adaptable aid, **never** as the replay mechanism —
+redcat2 is not a playbook runner (`00`/README). **(3)** When you
 freeze a hypothesis, set `freeze.frozen=true` with an **honest** `confidence` and a one-line `reason`:
 a `low`/`med` freeze may be thawed later if a new fact revives it, a `high` one should not be reopened
 without strong new evidence. `by` is `self` for your own freezes. A freeze with **`by: arbiter`** was
@@ -175,14 +178,15 @@ A fresh instance (or you, after a context reset) resumes by reading, in order: t
 That is enough to know what's held, what's next, and what's already ruled out — **do not
 re-ingest everything**, and do not re-run enumeration whose output is already on disk.
 
-**Replay your confirmed path — do not re-derive it.** The access you already won is captured as runnable
-`confirmed_path` scripts (rule 2 above). On resume, **re-establish state by running those scripts in
-order** against the live target (`scripts/replay.sh <run>` does this, or run each `exploit/*.sh` yourself)
-— they re-pull fresh creds/flags, so they work even after the box respawned and the IP/flags rotated.
-Only when a step's script actually **fails** do you re-derive that one step (and update its script).
-Replaying a proven chain is faster, more reliable, and far cheaper on context than re-reasoning the whole
-foothold from the journal every session — treat re-deriving an already-confirmed step as a mistake. Then
-pick up from the frontier (the first not-yet-confirmed hypothesis). Keep the
+**Replay your confirmed path — re-walk it, don't re-derive it.** The access you already won is recorded as
+`confirmed_path` (rule 2: `summary` + `how` + `yields`). On resume, **re-establish state by re-executing
+those steps yourself** against the live target — follow each `how` with your own tools, adapt to the
+current instance (fresh creds/IDs/flags), and confirm each `yields` — rather than re-reasoning the whole
+foothold from the journal. This is a reasoning **re-walk**, not a script run: you adapt the non-deterministic
+parts (a rotated token, a new container id) as you go. Re-walking a proven chain is faster, cheaper on
+context, and more reliable than rediscovery; re-deriving an already-confirmed step from scratch is a
+mistake. Only when a step genuinely fails do you re-derive that one step (and update its `how`). Then pick
+up from the frontier (the first not-yet-confirmed hypothesis). Keep the
 three living files **tight** (state, not a log dump — raw output belongs in `loot/ enum/
 research/`, never pasted into memory); a bloated journal makes every resume expensive and is a
 fast road to context overflow. Keeping them current *and lean* is not bookkeeping — it is what
