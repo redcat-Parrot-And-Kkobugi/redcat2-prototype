@@ -93,14 +93,17 @@ cleanup() {
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
-  # Solved only when BOTH flags present → stop the HTB machine + tear down tmux. Otherwise preserve state for resume.
-  if rc2_both_flags "$RUNDIR"; then
+  # SOLVED = both flags present AND (API mode) both ACCEPTED by the lab — only then stop the HTB machine
+  # + tear down tmux. A captured-but-rejected/stale flag is NOT solved, so the box is kept for resume.
+  if rc2_solved "$RUNDIR"; then
     if [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ "${NO_STOP:-0}" != "1" ]; then
       if htb_terminate "$machine_id" >/dev/null 2>&1; then echo "[hunt] HTB machine terminated (id $machine_id)."
       else echo "[hunt] HTB terminate request sent (id $machine_id) — verify with scripts/machine.sh active."; fi
     fi
     tmux ls -F '#{session_name}' 2>/dev/null | grep -E "^${tmux_base}(_|$)" | while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
-    echo "[hunt] SOLVED — both flags captured. tmux torn down. Run dir: $RUNDIR"
+    echo "[hunt] SOLVED — both flags captured + accepted. tmux torn down. Run dir: $RUNDIR"
+  elif rc2_both_flags "$RUNDIR"; then
+    echo "[hunt] both flags present but NOT both accepted by the lab (captured-but-rejected/stale root?). Machine KEPT, state PRESERVED. Check logs/flag_submit.log; re-run: ./hunt $TARGET"
   else
     echo "[hunt] stopped (not both flags). State PRESERVED for resume (tmux + run dir kept). Re-run: ./hunt $TARGET"
   fi

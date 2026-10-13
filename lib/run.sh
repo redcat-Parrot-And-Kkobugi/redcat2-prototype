@@ -193,7 +193,7 @@ rc2_run_loop() {
       > >(tee -a "$CONV" | "${PRETTY[@]}" >> "$LOG") 2>&1 &   # conv -> CONV (watch.sh renders it) + LOG; NOT the hunt terminal
     RUN_PID=$!          # global on purpose: cleanup() kills it
     rc=0; wait "$RUN_PID" || rc=$?   # errexit-safe: a non-zero agent exit must NOT abort the loop
-    if rc2_both_flags "$RUNDIR"; then echo "[hunt] both flags captured — done." | tee -a "$LOG"; break; fi
+    if rc2_solved "$RUNDIR"; then echo "[hunt] both flags captured + accepted — done." | tee -a "$LOG"; break; fi
     if [ "${NO_RESTART:-0}" = "1" ]; then echo "[hunt] NO_RESTART=1 — single run complete (rc=$rc)." | tee -a "$LOG"; break; fi
     # cyber-safeguard refusal: relaunch a fresh session, but cap it (content flags re-trip) — checked
     # before the clean-exit branch because a flagged run can look like rc=0.
