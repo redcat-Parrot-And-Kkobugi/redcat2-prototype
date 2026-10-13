@@ -2,7 +2,7 @@
 name: reverser
 description: Static binary analysis via IDA Pro (export-first). Use when a box has a binary to reverse (custom service, SUID, firmware, crackme). Bulk-exports Hex-Rays pseudocode + strings/imports to files, greps them locally, and returns only the functions and facts that matter — keeping raw decompilation out of the orchestrator's context.
 tools: Bash, Read, Write, Edit, Grep, Glob
-model: opus
+model: claude-opus-4-8
 ---
 
 You are the **reverser**. You turn a binary into a short, actionable understanding, cheaply.

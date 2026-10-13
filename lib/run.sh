@@ -176,6 +176,46 @@ rc2_relaunch_target_line() {
 # less-restricted model (CYBER_FALLBACK_MODEL) or the Cyber Verification Program, not more relaunches.
 _rc2_log_has_cyber() { tail -n 60 "${1:-/dev/null}" 2>/dev/null | grep -qiE 'safeguards flagged|\[cyber\]|Cyber Verification|cyber safeguard'; }
 
+# _rc2_attempt_guard <conv> <cyber0> <pid> <attempt> — backgrounded liveness watchdog for ONE claude -p
+# attempt. Fixes the "it just paused" failure: the hunt terminal is silent during an attempt (the agent
+# stream is redirected to the log, not here), so a long, spinning, or wedged attempt is indistinguishable
+# from a hang — and nothing bounds a single attempt, so `wait` can block for many minutes (or forever).
+# This runs in its OWN subshell (set +e: never abort the hunt), and on each tick:
+#   * emits a heartbeat to the hunt terminal so a live attempt never looks paused;
+#   * if the attempt has tripped the cyber safeguard >= RC2_CYBER_SPIN times, kills it — a fresh session
+#     re-trips the same CONTENT flag, so grinding the rest of the attempt is pure waste (the kill message
+#     says "cyber safeguard" so the loop counts it toward CYBER_MAX_RETRIES and stops cleanly at the cap);
+#   * if the attempt has emitted nothing for RC2_HANG_KILL s, kills it as wedged (-> crash relaunch).
+# Thresholds are env-tunable; set any to 0 to disable that check. cyber0 is the cyber-flag count captured
+# pre-launch so the count stays per-attempt (CONV is appended across the whole run).
+_rc2_attempt_guard() {
+  set +e                                   # own subshell (backgrounded) — never let a check abort the hunt
+  local conv="$1" cyber0="$2" pid="$3" attempt="$4"
+  local beat="${RC2_HEARTBEAT:-60}" spin="${RC2_CYBER_SPIN:-3}" hang="${RC2_HANG_KILL:-600}" tick="${RC2_GUARD_TICK:-15}"
+  local start now size last_size last_change last_beat cyc el
+  start=$(date +%s); last_change=$start; last_beat=$start
+  last_size=$(wc -c < "$conv" 2>/dev/null || true); last_size=${last_size:-0}
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep "$tick"; kill -0 "$pid" 2>/dev/null || break
+    now=$(date +%s); el=$((now-start))
+    size=$(wc -c < "$conv" 2>/dev/null || true); size=${size:-0}
+    [ "$size" != "$last_size" ] && { last_size=$size; last_change=$now; }
+    cyc=$(grep -c '\[cyber\]' "$conv" 2>/dev/null || true); cyc=$(( ${cyc:-0} - cyber0 )); [ "$cyc" -lt 0 ] && cyc=0
+    if [ "$spin" -gt 0 ] && [ "$cyc" -ge "$spin" ]; then
+      printf '\033[31m[hunt] attempt %d hit the cyber safeguard %dx this session — killing it (a fresh session re-trips the same content flag)\033[0m\n' "$attempt" "$cyc" | tee -a "$LOG"
+      pkill -TERM -P "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null; return 0
+    fi
+    if [ "$hang" -gt 0 ] && [ "$((now-last_change))" -ge "$hang" ]; then
+      printf '\033[31m[hunt] attempt %d emitted nothing for %ds — wedged, killing it (will relaunch)\033[0m\n' "$attempt" "$((now-last_change))" | tee -a "$LOG"
+      pkill -TERM -P "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null; return 0
+    fi
+    if [ "$beat" -gt 0 ] && [ "$((now-last_beat))" -ge "$beat" ]; then
+      printf '\033[2m[hunt] attempt %d live — %dm%02ds elapsed, %d cyber-flag(s) this session\033[0m\n' "$attempt" "$((el/60))" "$((el%60))" "$cyc" | tee -a "$LOG"
+      last_beat=$now
+    fi
+  done
+}
+
 rc2_run_loop() {
   local attempt=0 rc cyber_tries=0 surrender_reopens=0
   local PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
@@ -185,6 +225,7 @@ rc2_run_loop() {
       printf '\033[33m[hunt] relaunch %d/%d — resuming from disk memory\033[0m\n' "$attempt" "$MAX_RESTARTS" | tee -a "$LOG"
       rc2_relaunch_target_line "$RUNDIR"
     fi
+    local _cyber0; _cyber0=$(grep -c '\[cyber\]' "$CONV" 2>/dev/null || true); _cyber0=${_cyber0:-0}
     claude -p "$PROMPT" \
       --output-format stream-json \
       --model "$MODEL" \
@@ -193,7 +234,10 @@ rc2_run_loop() {
       --verbose \
       > >(tee -a "$CONV" | "${PRETTY[@]}" >> "$LOG") 2>&1 &   # conv -> CONV (watch.sh renders it) + LOG; NOT the hunt terminal
     RUN_PID=$!          # global on purpose: cleanup() kills it
+    local _guard_pid=""
+    _rc2_attempt_guard "$CONV" "$_cyber0" "$RUN_PID" "$attempt" & _guard_pid=$!   # heartbeat + spin/wedge kill
     rc=0; wait "$RUN_PID" || rc=$?   # errexit-safe: a non-zero agent exit must NOT abort the loop
+    if [ -n "$_guard_pid" ]; then kill "$_guard_pid" 2>/dev/null || true; wait "$_guard_pid" 2>/dev/null || true; fi
     if rc2_solved "$RUNDIR"; then echo "[hunt] both flags captured + accepted — done." | tee -a "$LOG"; break; fi
     if [ "${NO_RESTART:-0}" = "1" ]; then echo "[hunt] NO_RESTART=1 — single run complete (rc=$rc)." | tee -a "$LOG"; break; fi
     # cyber-safeguard refusal: relaunch a fresh session, but cap it (content flags re-trip) — checked
@@ -213,7 +257,7 @@ rc2_run_loop() {
       # re-audit the pruned/weak negatives. A concrete REOPEN relaunches with that directive; bounded.
       if _rc2_surrender_on && [ "$surrender_reopens" -lt "${RC2_SURRENDER_MAX:-2}" ]; then
         local sv verdict comp prim rsn
-        printf '\033[36m[surrender-gate] agent declared a blocker — independent re-audit (%s) ...\033[0m\n' "${RC2_SURRENDER_MODEL:-opus}" | tee -a "$LOG"
+        printf '\033[36m[surrender-gate] agent declared a blocker — independent re-audit (%s) ...\033[0m\n' "${RC2_SURRENDER_MODEL:-claude-opus-4-8}" | tee -a "$LOG"
         sv="$(rc2_surrender_gate "$RUNDIR")"
         verdict="$(printf '%s' "$sv" | jq -r '.verdict // "ACCEPT"' 2>/dev/null)"
         if [ "$verdict" = "REOPEN" ]; then
@@ -377,7 +421,7 @@ rc2_negatives() {
 # rc2_run_sameness_judge <rundir> <hypo> — echoes the judge's one-line verdict JSON (or nothing).
 rc2_run_sameness_judge() {
   local rundir="$1" h="$2" led="$1/ledger.json" J="$1/logs/tools.jsonl"   # $1 not $rundir (same-local gotcha)
-  local claim target recent wm model="${GUARD_JUDGE_MODEL:-sonnet}" prompt
+  local claim target recent wm model="${GUARD_JUDGE_MODEL:-claude-opus-4-8}" prompt
   claim="$(jq -r --arg h "$h" '.hypotheses[$h].claim // "?"' "$led" 2>/dev/null)"
   target="$(jq -r --arg h "$h" '.hypotheses[$h].target // "?"' "$led" 2>/dev/null)"
   recent="$(grep '"event":"pre"' "$J" 2>/dev/null | tail -24 | jq -r '(.command // .tool // "?")' 2>/dev/null | cut -c1-200)"
@@ -476,7 +520,7 @@ _rc2_surrender_on() {
 
 # rc2_surrender_gate <rundir> — echoes the reviewer's verdict JSON (or nothing).
 rc2_surrender_gate() {
-  local rundir="$1" model="${RC2_SURRENDER_MODEL:-opus}" prompt wm negs surf blocker
+  local rundir="$1" model="${RC2_SURRENDER_MODEL:-claude-opus-4-8}" prompt wm negs surf blocker
   wm="$(sed -n '/## Privilege map/,/## Open questions/p' "$rundir/worldmodel.md" 2>/dev/null | head -60)"
   [ -n "$wm" ] || wm="$(head -80 "$rundir/worldmodel.md" 2>/dev/null)"
   negs="$(rc2_negatives "$rundir")"

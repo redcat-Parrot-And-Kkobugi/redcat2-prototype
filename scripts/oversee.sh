@@ -13,7 +13,7 @@
 #    scripts/oversee.sh blizzard "focus the SSTI on /render, not the login"
 #    OVERSEE_INTERVAL=300 scripts/oversee.sh blizzard
 #    ONESHOT=1 scripts/oversee.sh blizzard             # one assessment then exit
-#    OVERSEE_MODEL=sonnet scripts/oversee.sh blizzard
+#    OVERSEE_MODEL=claude-opus-4-8 scripts/oversee.sh blizzard   # pin reviewer model (default: 4.8)
 # =============================================================================
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
@@ -43,7 +43,7 @@ done
 # precedence: flag > env > default. Empty slug → newest run (so `-d "…"` alone works).
 NAME="$_slug"
 OP_NOTE="${_directive:-${OP_NOTE:-}}"
-MODEL="${_model:-${OVERSEE_MODEL:-opus}}"
+MODEL="${_model:-${OVERSEE_MODEL:-claude-opus-4-8}}"
 INTERVAL="${_interval:-${OVERSEE_INTERVAL:-600}}"
 [ -n "$_oneshot" ] && ONESHOT=1
 RUNDIR="$(rc2_resolve_rundir "$NAME")"
