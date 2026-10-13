@@ -153,19 +153,19 @@ actually lost.** It is opt-in and OFF by default.
 ### 4.1 The two failure modes (both observed on "Nimbus")
 
 ```
-  FAILURE 1 : OVER-GRIND                  FAILURE 2 : PREMATURE SURRENDER
-  ----------------------                  -------------------------------
-  drill one disproven hypothesis          dismiss a surface on thin evidence
-  forever -- Nimbus burned 832 calls      -- "CodeBuild is a mock" from ONE 0.5s
-  on one container-escape across 6         build -- record that shallow negative
-  sessions; solved boxes finished in       as fact, never re-open it, then declare
-  ~186-416 calls.                          a confident (WRONG) blocker.
+  FAILURE 1 : OVER-GRIND                    FAILURE 2 : PREMATURE SURRENDER
+  ----------------------                    -------------------------------
+  drill one disproven hypothesis            dismiss a surface on thin evidence
+  forever -- Nimbus burned 832 calls        -- "CodeBuild is a mock" from ONE 0.5s
+  on one container-escape across 6          build -- record that shallow negative
+  sessions; solved boxes finished in        as fact, never re-open it, then declare
+  ~186-416 calls.                           a confident (WRONG) blocker.
 
-     caught by:                               caught by:
-       hook repeat / stall / ceiling            surrender gate (re-audit negatives)
-       sameness watcher (freeze)                negative provenance          (A)
-       oversee consensus gate                   privilege-delta orientation  (B)
-                                                open-enumeration reflex       (E)
+     caught by:                             caught by:
+       hook repeat / stall / ceiling        surrender gate (re-audit negatives)
+       sameness watcher (freeze)            negative provenance          (A)
+       oversee consensus gate               privilege-delta orientation   (B)
+                                            open-enumeration reflex        (E)
 ```
 
 A third, subtler one surfaced later:
