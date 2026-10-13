@@ -191,7 +191,7 @@ _rc2_log_has_cyber() { tail -n 60 "${1:-/dev/null}" 2>/dev/null | grep -qiE 'saf
 _rc2_attempt_guard() {
   set +e                                   # own subshell (backgrounded) — never let a check abort the hunt
   local conv="$1" cyber0="$2" pid="$3" attempt="$4"
-  local beat="${RC2_HEARTBEAT:-60}" spin="${RC2_CYBER_SPIN:-3}" hang="${RC2_HANG_KILL:-600}" tick="${RC2_GUARD_TICK:-15}"
+  local beat="${RC2_HEARTBEAT:-60}" spin="${RC2_CYBER_SPIN:-10}" hang="${RC2_HANG_KILL:-600}" tick="${RC2_GUARD_TICK:-15}"
   local start now size last_size last_change last_beat cyc el
   start=$(date +%s); last_change=$start; last_beat=$start
   last_size=$(wc -c < "$conv" 2>/dev/null || true); last_size=${last_size:-0}
@@ -387,6 +387,47 @@ rc2_status_writer() {
   done
 }
 
+# _rc2_recent_self_reset <rundir> — best-effort: did THIS run issue a reset/reboot recently? Greps the
+# recent tail of the tool log + journal for a reset/stop/terminate/reboot action, to tell an EXPECTED
+# down (the agent reset the box) from an UNEXPECTED one (HTB auto-reset/respawn or crash).
+_rc2_recent_self_reset() {
+  { tail -c 40000 "$1/logs/tools.jsonl" 2>/dev/null; tail -40 "$1/journal.md" 2>/dev/null; } \
+    | grep -qiE 'machine\.sh +(reset|stop)|htb[-_ ].*(reset|stop|terminate)|\breboot\b|\bshutdown\b'
+}
+
+# rc2_health_watcher <rundir> — background target-liveness signal. When the BOX reboots underneath the
+# hunt (HTB auto-reset/respawn, a crash, or a reset the agent did NOT issue), the agent otherwise only
+# sees its commands start failing and can misread a reboot as "my exploit broke" or "this path is dead".
+# This probes the target every HEALTH_INTERVAL s (default 30) and rewrites <rundir>/target_health.md — a
+# signal the agent reads (doctrine 40) — flipping UP/DOWN with timestamps; on a DOWN it says whether a
+# reset was recently logged from inside the run (EXPECTED) or not (UNEXPECTED: wait + re-probe, the IP may
+# change on respawn, treat pre-reboot flags as stale). Fail-open; stops on logs/.stop. Background from hunt.
+rc2_health_watcher() {
+  set +e                                   # own subshell (backgrounded) — probes fail normally; never abort
+  local rundir="$1" iv="${HEALTH_INTERVAL:-30}" ports="${HEALTH_PORTS:-22 80 443}" hf="$1/target_health.md" ip p up t0 note state="" since=""
+  while [ ! -f "$rundir/logs/.stop" ]; do
+    ip=""; [ -f "$rundir/target.env" ] && { . "$rundir/target.env" 2>/dev/null || true; ip="${target_ip:-}"; }
+    up=0
+    if [ -n "$ip" ]; then
+      for p in $ports; do timeout 3 bash -c "exec 3<>/dev/tcp/$ip/$p" 2>/dev/null && { up=1; break; }; done
+    fi
+    t0="$(date -u +%FT%TZ)"
+    if [ "$up" = 1 ]; then
+      [ "$state" = up ] || { state=up; since="$t0"; }
+      printf '# 🎯 target health — UP\n_updated %s · ip %s · reachable_\n\nTarget is UP (since %s). Normal operation.\n' "$t0" "$ip" "$since" > "$hf" 2>/dev/null
+    else
+      [ "$state" = down ] || { state=down; since="$t0"; }
+      if _rc2_recent_self_reset "$rundir"; then
+        note="A reset/reboot WAS logged from this run recently — this down is EXPECTED. Wait for the box to return (poll :22/:80), then re-walk your confirmed_path. On HTB a reset ROTATES the flags, so re-read user.txt/root.txt after recovery before trusting or submitting any flag."
+      else
+        note="⚠️ UNEXPECTED: no reset/reboot was logged from this run. The box most likely auto-reset, respawned, or CRASHED under you — this is NOT your exploit breaking and NOT a dead path. Do not conclude a hypothesis failed from connection errors alone: wait and re-probe (:22/:80). The IP may change on respawn. Any flag read BEFORE this down may now be STALE (a reset rotates them) — re-read user.txt/root.txt after recovery before submitting."
+      fi
+      printf '# 🎯 target health — DOWN ⛔\n_updated %s · ip %s · UNREACHABLE since %s_\n\n%s\n' "$t0" "${ip:-?}" "$since" "$note" > "$hf" 2>/dev/null
+    fi
+    sleep "$iv"
+  done
+}
+
 # ── P1-d: sameness-judge watcher ─────────────────────────────────────────────
 # An independent judge (sonnet) decides whether the current hypothesis is being DRILLED (same approach,
 # no evidence movement = rabbit hole -> persistent arbiter freeze) or genuinely VARIED (keep going).
@@ -421,7 +462,7 @@ rc2_negatives() {
 # rc2_run_sameness_judge <rundir> <hypo> — echoes the judge's one-line verdict JSON (or nothing).
 rc2_run_sameness_judge() {
   local rundir="$1" h="$2" led="$1/ledger.json" J="$1/logs/tools.jsonl"   # $1 not $rundir (same-local gotcha)
-  local claim target recent wm model="${GUARD_JUDGE_MODEL:-claude-opus-4-8}" prompt
+  local claim target recent wm model="${GUARD_JUDGE_MODEL:-sonnet}" prompt
   claim="$(jq -r --arg h "$h" '.hypotheses[$h].claim // "?"' "$led" 2>/dev/null)"
   target="$(jq -r --arg h "$h" '.hypotheses[$h].target // "?"' "$led" 2>/dev/null)"
   recent="$(grep '"event":"pre"' "$J" 2>/dev/null | tail -24 | jq -r '(.command // .tool // "?")' 2>/dev/null | cut -c1-200)"

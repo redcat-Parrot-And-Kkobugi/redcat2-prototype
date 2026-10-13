@@ -88,6 +88,28 @@ pass and why**. Choose it by expected value, not by habit:
   absent, the move is not to keep trying to produce it — it is to list what *is* there and escalate with
   that. Catching yourself write off a context after testing only the escape you had in mind is the
   signal to do this.
+- **A higher-privilege context is itself most of the win — mine it from the inside, don't just try to
+  leave it by one planned door.** The instant you reach something that runs above you — a privileged or
+  root container, a setuid context, a root daemon whose input you control — the job stops being "run the
+  one escape I planned" and becomes "**inventory this context and act on whatever is actually here.**"
+  Hunt **processes** as hard as you hunt mounts/devices: `ps -ef`/`ps aux`, `/proc/*/status` (Uid/Gid,
+  `CapEff`), `/proc/*/cmdline`, `/proc/*/environ` — *what runs as root or with caps you lack*, and whether
+  you can **interact with or pivot through it**: a socket or pipe it serves, a file/dir/config it reads
+  that you can write, a shared PID/mount/net namespace, an argument/env/job it consumes, a token or key in
+  its environment. In a *privileged* container the host is usually one step away from the inside — raw
+  block devices in `/dev` you can mount, `CAP_SYS_ADMIN`/`CAP_SYS_PTRACE` you can wield, the host
+  filesystem or a root process already visible. Do not leave a root context having only checked that your
+  single pre-chosen escape was missing.
+- **An ephemeral or unstable higher-privilege context is a *delivery* constraint, not a dead end.** Short-
+  lived, one-shot-per-invocation, or dropping on a keep-alive/409/timeout does **not** close the context —
+  it just means you get one shot, so **shrink the plan to fit one shot**: stage a single self-contained
+  **enumerate-then-act** payload (inventory + decide + exfil/act in one non-interactive run, results pushed
+  out to you) instead of fighting to hold a persistent interactive shell you then enumerate by hand. One
+  clean shot inside a root context beats a hundred retries aimed at producing a persistent shell or one
+  specific primitive you have already proven absent. "I can't keep it alive long enough to do the thing I
+  planned" is the prompt to **change the thing you planned**, never to abandon the context — and never to
+  declare a blocker (`00` → Done: a shallow higher-privilege dismissal is exactly what the surrender gate
+  re-opens).
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
@@ -155,7 +177,11 @@ built, one proven rung at a time. Re-score the board.
   chain finally lands, so retries are allowed, not banned. When an attempt stops, tag it:
   **done** (it produced its result), **exhausted** (budget/time ran out mid-attempt — *not*
   permanently dead, re-angle it), or **blocked** (the tool/transport/environment failed so it
-  effectively never ran — a same-direction re-dispatch is safe once the cause is fixed). Only
+  effectively never ran — a same-direction re-dispatch is safe once the cause is fixed). **A sudden
+  burst of connection failures/timeouts across *all* your actions is usually the target itself rebooting
+  under you (HTB reset/respawn/crash), not your exploit — read `target_health.md` (harness-maintained);
+  if it is DOWN that is a `blocked` cause: wait, re-probe, expect a possible new IP, and re-read the flags
+  after recovery — do not refute a hypothesis from mass connection errors.** Only
   when an attempt is judged **exhausted or blocked** do you stop rewording and instead
   **re-establish a new mechanism or re-examine the current one** (a different gadget, encoding,
   auth path, or assumption). That mechanism change — not one more reworded shot — is what moves

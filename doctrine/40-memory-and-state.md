@@ -162,8 +162,14 @@ Rule: **never re-run a command whose output already exists** — read the file. 
 logs every tool call to `logs/`, so before repeating an expensive scan, check whether you
 (or a prior session) already ran it.
 
-`status.md` and `failure_analysis.*` are **auto-generated** (a periodic snapshotter + an on-exit
-classifier) — read-only; your own record is `journal.md`. `writeup.md` is also assembled on exit by
+`status.md`, `target_health.md`, and `failure_analysis.*` are **auto-generated** (a periodic
+snapshotter, a target-liveness watcher, and an on-exit classifier) — read-only; your own record is
+`journal.md`. **`target_health.md`** is the harness's up/down signal for the box: when your commands
+suddenly start failing *across the board* with connection errors/timeouts, read it before concluding
+anything — if it says **DOWN**, the target rebooted under you (HTB auto-reset/respawn, a crash, or a
+reset) and this is **not** your exploit breaking or a dead path; wait and re-probe, expect a possible
+new IP on respawn, and **re-read `user.txt`/`root.txt` after recovery** because a reset rotates the
+flags (a flag captured before the reboot can be stale and will be rejected on submit). `writeup.md` is also assembled on exit by
 `report.sh` from your living files — an emoji banner with the flags, the solve chain from
 `journal.md`, the verified facts from `worldmodel.md`, the tools you wrote, and the metrics block —
 so **the quality of the write-up is the quality of `worldmodel.md` + `journal.md`.** You MAY write a
