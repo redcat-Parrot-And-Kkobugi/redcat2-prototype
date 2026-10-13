@@ -38,6 +38,22 @@ rc2_both_flags() {
   local f="${1:-.}/flags.txt"
   [ -f "$f" ] && grep -qiE "^user=$RC2_FLAG_RE" "$f" && grep -qiE "^root=$RC2_FLAG_RE" "$f"
 }
+# rc2_both_accepted <rundir> — both user+root were SUBMITTED AND ACCEPTED by the lab API, i.e. each
+# appears as a bare line in logs/.submitted (not a `kind:bad:<flag>` rejection). Whole-line match so
+# `user:bad:...` does not count. This is the truth a captured-but-wrong/stale flag fails.
+rc2_both_accepted() {
+  local sub="${1:-.}/logs/.submitted"
+  [ -f "$sub" ] && grep -qxiE 'user' "$sub" && grep -qxiE 'root' "$sub"
+}
+# rc2_solved <rundir> — is the box GENUINELY owned? Both flags present AND, when the HTB API is in use,
+# both accepted (so a rejected/stale flag never counts as solved and never triggers machine teardown).
+# IP-only mode (no API/token) has no submission channel, so presence is the only available signal.
+rc2_solved() {
+  local rundir="${1:-.}"
+  rc2_both_flags "$rundir" || return 1
+  { [ "${RC2_HTB:-0}" = "1" ] && [ -n "${HTB_TOKEN:-}" ]; } || return 0   # IP-only: present == solved
+  rc2_both_accepted "$rundir"
+}
 
 # rc2_resolve_rundir <arg> — needs $ROOT. Echoes a run dir:
 #   a literal dir, else runs/<arg>, else the newest run. Empty output if none.
