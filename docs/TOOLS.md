@@ -2,7 +2,8 @@
 
 Complete usage for every executable in the tree: the launcher, the helper scripts, the HTB API
 utilities, the token pipeline, and the sourced libraries. For the big picture read
-[`GUIDE.md`](GUIDE.md); this file is the per-tool detail (every flag, env var, and example).
+[`GUIDE.md`](GUIDE.md); for *why the pipeline is built this way* read [`DEVELOPER.md`](DEVELOPER.md);
+this file is the per-tool detail (every flag, env var, and example).
 
 Conventions: run everything from the repo root (`/home/kali/redcat2`). A `<name>` argument is an
 HTB machine name (case-insensitive resolution; the run dir keeps the real casing), a run **slug**,
@@ -425,11 +426,11 @@ Loaded by `lib/bootstrap.sh`; edit the function, not the launcher.
 |---|---|
 | `lib/bootstrap.sh` | library loader; sets `$RC2_ROOT`, sources the rest |
 | `lib/guard_lib.sh` | dependency-free, side-effect-free guard/JSON helpers — `rc2_json_update` (atomic fail-open JSON RMW), `rc2_guard_tag`, `rc2_guard_effective` (floor⊔live), `rc2_mode_rank`, `rc2_is_frozen` (ledger∪arbiter), `rc2_guard_core_on` (is any enforcement layer active). Sourced by `common.sh` **and** directly (guarded) by the standalone hook so both share one implementation |
-| `lib/common.sh` | sources `guard_lib`; ANSI colors, `rc2_resolve_rundir`, `rc2_to_epoch`, `rc2_utc`, `rc2_load_target`, `rc2_write_supervisor` (bump-tick + write supervisor.md, shared by oversee + surrender gate), and the flag helpers (`RC2_FLAG_RE`, `rc2_flag_value`, `rc2_hex_in`, `rc2_both_flags`) |
+| `lib/common.sh` | sources `guard_lib`; ANSI colors, `rc2_resolve_rundir`, `rc2_to_epoch`, `rc2_utc`, `rc2_load_target`, `rc2_write_supervisor` (bump-tick + write supervisor.md, shared by oversee + surrender gate), and the flag helpers (`RC2_FLAG_RE`, `rc2_flag_value`, `rc2_hex_in`, `rc2_both_flags`, `rc2_both_accepted`, `rc2_solved` = both flags *accepted*, gates machine teardown) |
 | `lib/tools_log.sh` | shared `logs/tools.jsonl` readers (`rc2_tl_posts`/`_count`/`_first_ts`/`_last_ts`/`_dur_ms`/`_recent`) used by report/analyze/status/flag-scan |
 | `lib/env.sh` | `.env` loading, SecLists, and the **single source** of guard/calibration default knobs (`RC2_CEIL/WARN/BUDGET_DEFAULT/REPEAT_FREEZE/STALL/GATE_N/GATE_MODE`, `GUARD_WATCH_INTERVAL/JUDGE_MODEL`), all exported so the per-call hook inherits them |
 | `lib/htb.sh` | token refresh, machine resolve/spawn, VPN pre-flight, `rc2_htb_owned_init` (reads HTB owned-status → `live`/`defer` submit mode), and `rc2_flag_watcher` — submits user/root flags via two channels (`flags.txt` + enforced scan of logged `user.txt`/`root.txt` reads); dedup in `logs/.submitted` incl. per-value `kind:bad:<flag>` so a rejected flag isn't re-hammered; token-error (not wrong-flag) retries |
-| `lib/run.sh` | run-dir scaffold (case-preserving slug; seeds the 3 living files + `ledger.json` + `logs/accounting.json` + guard secret), prompt assembly, resilient run loop + **surrender gate** on a clean-exit blocker (`rc2_surrender_gate`/`_directive`, `SURRENDER.md`), status writer (+ live confirmed-path into `writeup.md`), the sameness-judge watcher (`rc2_guard_watcher`), `rc2_claude_oneshot` (out-of-band repo-isolated `claude -p`, shared by judge + surrender gate), oversee launch |
+| `lib/run.sh` | run-dir scaffold (case-preserving slug; seeds the 3 living files + `ledger.json` + `logs/accounting.json` + guard secret), prompt assembly, resilient run loop + **surrender gate** on a clean-exit blocker (`rc2_surrender_gate`/`_directive`, `SURRENDER.md`), status writer (+ live confirmed-path into `writeup.md`), the sameness-judge watcher (`rc2_guard_watcher`) incl. the `contradiction` signal (`rc2_guard_contradiction_signal`) and the arbiter freeze (`rc2_guard_commit_freeze`), `rc2_negatives` (structured `ledger.negatives` + free-text, read by judge + surrender gate), `rc2_claude_oneshot` (out-of-band repo-isolated `claude -p`, shared by judge + surrender gate), oversee launch |
 | `lib/hook_log.sh` | per-run PreToolUse/PostToolUse hook (a standalone process per call): force-logs every call to `logs/tools.jsonl` + `logs/raw/`, blocks identical-command/identical-result repeats (anti-stuck/throttle/DoS), and runs the guard accounting + warn/block gating (GUIDE §4a). Sources `guard_lib.sh` guarded so it can never be broken by the lib |
 
 ---

@@ -16,6 +16,8 @@ like a researcher instead of running a checklist, scaling its effort to what the
 
 **Full guide:** [`docs/GUIDE.md`](docs/GUIDE.md) — setup, every command and flag, every script,
 tmux/herdr, reversing, resume, observability, security, and troubleshooting.
+**Developer guide:** [`docs/DEVELOPER.md`](docs/DEVELOPER.md) — the whole pipeline, why it is built
+this way, the guard's failure-mode model, the data model, and the invariants, with ASCII diagrams.
 
 ## Quick start
 

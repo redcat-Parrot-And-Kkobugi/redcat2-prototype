@@ -6,6 +6,10 @@ that makes the agent reason like a researcher — observe → hypothesize → re
 → verify → reflect — rather than run a playbook. **Authorized labs only.** `./hunt` executes
 real commands against the target with `--dangerously-skip-permissions`.
 
+> This guide is how to **operate** redcat2. For the design rationale — the whole pipeline, why it is
+> built this way, the goals, and the guard's failure-mode model, with diagrams — see the
+> **[Developer Guide](DEVELOPER.md)**.
+
 - [1. Quick start](#1-quick-start)
 - [2. One-time setup](#2-one-time-setup)
 - [3. The `hunt` command + env toggles](#3-the-hunt-command--env-toggles)
@@ -198,7 +202,10 @@ opt-in and off by default, sharing state and bounded below by the operator.
 - **Sameness watcher** (`rc2_guard_watcher` + `JUDGE.md`, out-of-band, model) — when a hypothesis stalls
   (`RC2_STALL` experiments, no new evidence) an **independent sonnet/haiku judge** rules *SAME* (rabbit
   hole → persistent **arbiter freeze**, solver can't clear) or *VARYING* (let it run). Catches
-  textually-varied drilling the hook's literal fingerprint cannot. [failure mode 1]
+  textually-varied drilling the hook's literal fingerprint cannot. [failure mode 1] It also emits a
+  **`contradiction` signal** — when recent actions *presuppose* a fact the agent recorded absent/refuted
+  (e.g. chasing a `docker.sock` it already found absent at high confidence) it writes a supervisor tick
+  telling the solver to re-test that negative or open-enumerate. [failure mode 3: "fix the want, then solve"]
 - **Oversee gate** (`scripts/oversee.sh`, opus, trajectory) — only after `RC2_GATE_N` consecutive
   rabbit-hole reviews about the **same `FOCUS`** does the supervisor raise the live guard level
   (re-asserted each tick; released on any on-track review). [failure mode 1]
@@ -228,6 +235,14 @@ freezes, a one-shot `override`); `logs/accounting.json` is the harness's *counte
 freezes, which the solver must never write. Keeping them separate means a bad hand-edit can't corrupt
 the counters enforcement rests on. A guard block always names the reason, the ledger snapshot, the exact
 command, and the three ways out: **vary materially**, **freeze + switch**, or spend a one-shot `override`.
+The solver also records **load-bearing negatives** in `ledger.negatives` (`{fact, confidence, tested}`);
+these are what the surrender gate re-opens and the contradiction check reads, and a shallow negative is
+explicitly a re-open candidate, not a wall. Finally, a run counts as **SOLVED only when both flags are
+*accepted* by the lab** (not merely written to `flags.txt`) — so a captured-but-rejected/stale flag never
+terminates the machine.
+
+**Design deep-dive:** the full rationale — the failure modes, the authority model, the state split, the
+replay/negatives/contradiction mechanisms, with diagrams — is in [`DEVELOPER.md`](DEVELOPER.md) §4.
 
 **Turning it on** (see the toggles table above):
 ```bash
@@ -466,7 +481,7 @@ drive the real service with the exploit `exploit-dev` builds.
 redcat2/
   hunt                      launcher
   CLAUDE.md README.md OVERSEER.md JUDGE.md SURRENDER.md .env.example .gitignore
-  docs/GUIDE.md docs/TOOLS.md   this guide + the full per-tool reference
+  docs/GUIDE.md docs/TOOLS.md docs/DEVELOPER.md   operate · per-tool · design rationale
   doctrine/00..60           the brain (system prompt)
   .claude/agents/           researcher recon-analyst exploit-dev verifier reverser
   .claude/settings.local.json   personal auto-PR Stop hook       (gitignored)
