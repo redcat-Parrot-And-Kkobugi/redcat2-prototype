@@ -425,25 +425,44 @@ _rc2_recent_self_reset() {
 # change on respawn, treat pre-reboot flags as stale). Fail-open; stops on logs/.stop. Background from hunt.
 rc2_health_watcher() {
   set +e                                   # own subshell (backgrounded) — probes fail normally; never abort
-  local rundir="$1" iv="${HEALTH_INTERVAL:-30}" ports="${HEALTH_PORTS:-22 80 443}" hf="$1/target_health.md" ip p up t0 note state="" since=""
+  local rundir="$1" iv="${HEALTH_INTERVAL:-30}" ports="${HEALTH_PORTS:-22 80 443}" hf="$1/target_health.md" ip p up t0 now note state="" since="" last_ipchk=0 moved act live
   while [ ! -f "$rundir/logs/.stop" ]; do
     ip=""; [ -f "$rundir/target.env" ] && { . "$rundir/target.env" 2>/dev/null || true; ip="${target_ip:-}"; }
     up=0
     if [ -n "$ip" ]; then
       for p in $ports; do timeout 3 bash -c "exec 3<>/dev/tcp/$ip/$p" 2>/dev/null && { up=1; break; }; done
     fi
-    t0="$(date -u +%FT%TZ)"
+    t0="$(date -u +%FT%TZ)"; now="$(date +%s)"
     if [ "$up" = 1 ]; then
       [ "$state" = up ] || { state=up; since="$t0"; }
       printf '# 🎯 target health — UP\n_updated %s · ip %s · reachable_\n\nTarget is UP (since %s). Normal operation.\n' "$t0" "$ip" "$since" > "$hf" 2>/dev/null
     else
       [ "$state" = down ] || { state=down; since="$t0"; }
-      if _rc2_recent_self_reset "$rundir"; then
-        note="A reset/reboot WAS logged from this run recently — this down is EXPECTED. Wait for the box to return (poll :22/:80), then re-walk your confirmed_path. On HTB a reset ROTATES the flags, so re-read user.txt/root.txt after recovery before trusting or submitting any flag."
-      else
-        note="⚠️ UNEXPECTED: no reset/reboot was logged from this run. The box most likely auto-reset, respawned, or CRASHED under you — this is NOT your exploit breaking and NOT a dead path. Do not conclude a hypothesis failed from connection errors alone: wait and re-probe (:22/:80). The IP may change on respawn. Any flag read BEFORE this down may now be STALE (a reset rotates them) — re-read user.txt/root.txt after recovery before submitting."
+      # DOWN — but did HTB respawn the box on a NEW ip? (authoritative: htb_active, id-matched). If so,
+      # update target.env AND announce the move, so the agent and the next relaunch re-point instead of
+      # waiting on a dead ip forever — the exact "spinning on a dead ip" failure this run just hit.
+      moved=""
+      if [ "${RC2_HTB:-0}" = "1" ] && [ -n "${machine_id:-}" ] && [ "$((now - last_ipchk))" -ge "${HEALTH_IP_RECHECK:-90}" ]; then
+        last_ipchk="$now"
+        act="$(htb_active 2>/dev/null)"
+        if [ "$(printf '%s' "$act" | jq -r '.info.id // empty' 2>/dev/null)" = "$machine_id" ]; then
+          live="$(printf '%s' "$act" | jq -r '.info.ip // empty' 2>/dev/null)"
+          if [ -n "$live" ] && [ "$live" != "null" ] && [ "$live" != "$ip" ]; then
+            moved="$live"
+            [ -f "$rundir/target.env" ] && sed -i "s/^target_ip=.*/target_ip=\"$live\"/" "$rundir/target.env" 2>/dev/null || true
+          fi
+        fi
       fi
-      printf '# 🎯 target health — DOWN ⛔\n_updated %s · ip %s · UNREACHABLE since %s_\n\n%s\n' "$t0" "${ip:-?}" "$since" "$note" > "$hf" 2>/dev/null
+      if [ -n "$moved" ]; then
+        printf '# 🎯 target health — MOVED ⚠️\n_updated %s · OLD ip %s is DOWN · LIVE ip now %s_\n\n⚠️ TARGET MOVED: HTB now assigns this machine (id %s) to **%s** — the old ip %s is dead. The box respawned on a NEW ip and target.env has been updated. **Re-point every command/exploit at %s**, re-walk confirmed_path there, and re-read user.txt/root.txt on the new ip (flags rotate on respawn).\n' "$t0" "$ip" "$moved" "${machine_id:-?}" "$moved" "$ip" "$moved" > "$hf" 2>/dev/null
+      else
+        if _rc2_recent_self_reset "$rundir"; then
+          note="A reset/reboot WAS logged from this run recently — this down is EXPECTED. Wait for the box to return (poll :22/:80), then re-walk your confirmed_path. On HTB a reset ROTATES the flags, so re-read user.txt/root.txt after recovery before trusting or submitting any flag."
+        else
+          note="⚠️ UNEXPECTED: no reset/reboot was logged from this run. The box most likely auto-reset, respawned, or CRASHED under you — NOT your exploit breaking and NOT a dead path. Do not refute a hypothesis from connection errors: wait and re-probe (:22/:80). If it stays down it likely respawned on a NEW ip — this watcher re-checks HTB every ${HEALTH_IP_RECHECK:-90}s and will update target.env + flag the move here. Any flag read BEFORE this down may be STALE — re-read after recovery."
+        fi
+        printf '# 🎯 target health — DOWN ⛔\n_updated %s · ip %s · UNREACHABLE since %s_\n\n%s\n' "$t0" "${ip:-?}" "$since" "$note" > "$hf" 2>/dev/null
+      fi
     fi
     sleep "$iv"
   done
