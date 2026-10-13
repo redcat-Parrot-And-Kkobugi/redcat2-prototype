@@ -46,8 +46,13 @@ rc2_resolve_target "$TARGET"
 RUNDIR="$(rc2_scaffold)"
 . "$RUNDIR/target.env"
 : "${target_ip:?target_ip empty — set it in $RUNDIR/target.env and re-run}"
+rc2_rotate_journal "$RUNDIR"          # roll old journal entries to archive BEFORE launch (bounds each resume's re-hydration)
 
 export TMPDIR="$RUNDIR/tmp"; mkdir -p "$TMPDIR"
+# per-run cache: keep local caches INSIDE the run dir (self-contained; archived by --fresh, cleaned by rm).
+# XDG_CACHE_HOME moves CACHE only — NOT Claude's config/MCP/auth (those stay at their default path, so
+# user-scope MCP like burp + settings + the OAuth token keep working). Opt out with NO_RUN_CACHE=1.
+[ "${NO_RUN_CACHE:-0}" = "1" ] || export XDG_CACHE_HOME="$RUNDIR/cache"
 
 # Non-interactive sudo via askpass (so `sudo -A` never hangs and the password is never on a cmd line).
 if [ -n "${SUDO_PASS:-}" ]; then

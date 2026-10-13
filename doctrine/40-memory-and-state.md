@@ -164,7 +164,9 @@ logs every tool call to `logs/`, so before repeating an expensive scan, check wh
 
 `status.md`, `target_health.md`, and `failure_analysis.*` are **auto-generated** (a periodic
 snapshotter, a target-liveness watcher, and an on-exit classifier) — read-only; your own record is
-`journal.md`. **`target_health.md`** is the harness's up/down signal for the box: when your commands
+`journal.md`. **`status.md` is the operator's dashboard — it re-states your living files plus the ledger
+counters, so do NOT read it to rebuild your own state (read the living files directly); reading both just
+pulls the same context in twice.** **`target_health.md`** is the harness's up/down signal for the box: when your commands
 suddenly start failing *across the board* with connection errors/timeouts, read it before concluding
 anything — if it says **DOWN**, the target rebooted under you (HTB auto-reset/respawn, a crash, or a
 reset) and this is **not** your exploit breaking or a dead path; wait and re-probe, expect a possible
@@ -188,10 +190,13 @@ auto-records a flag it sees you read from `user.txt`/`root.txt`, but that is onl
 
 ## Resume
 
-A fresh instance (or you, after a context reset) resumes by reading, in order: the **top** of
-`worldmodel.md` → the **ranked** `hypotheses.md` → the **tail** of `journal.md` → `flags.txt`.
-That is enough to know what's held, what's next, and what's already ruled out — **do not
-re-ingest everything**, and do not re-run enumeration whose output is already on disk.
+A fresh instance (or you, after a context reset) resumes from a fixed **resume kernel** — read only
+these, in order: the **top** of `worldmodel.md` → the **ranked** `hypotheses.md` → the **tail** of
+`journal.md` → `ledger.json`'s `confirmed_path` → `flags.txt`. That is enough to know what's held,
+what's next, and what's already ruled out. **Read nothing else to rebuild state** — not `status.md`
+(the operator dashboard just re-states these), not `journal.archive.md` (rolled-over history), not the
+raw `logs/`/`enum/` output — and **do not re-ingest everything** or re-run enumeration already on disk.
+Pulling in those mirrors/archives only re-pays context the kernel already gives you.
 
 **Replay your confirmed path — re-walk it, don't re-derive it.** The access you already won is recorded as
 `confirmed_path` (rule 2: `summary` + `how` + `yields`). On resume, **re-establish state by re-executing

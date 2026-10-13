@@ -14,7 +14,7 @@ rc2_scaffold() {
     local bak="$RUNDIR.bak.$(date +%s)"; mv "$RUNDIR" "$bak"
     echo "[fresh] archived previous run -> $(basename "$bak")" >&2
   fi
-  mkdir -p "$RUNDIR"/{tmp,recon,enum,loot/{hashes,keys,tickets,files},exploit,tools,bin,research,reversing,notes,logs/raw,tmp,.claude}
+  mkdir -p "$RUNDIR"/{tmp,cache,recon,enum,loot/{hashes,keys,tickets,files},exploit,tools,bin,research,reversing,notes,logs/raw,.claude}
   # agents available to `claude -p` (cwd = run dir): symlink the team in.
   [ -e "$RUNDIR/.claude/agents" ] || ln -s "$RC2_ROOT/.claude/agents" "$RUNDIR/.claude/agents" 2>/dev/null || true
   # repo tools reachable from the run dir without cd (doctrine prefers absolute paths; this is the convenience fallback)
@@ -115,6 +115,24 @@ JSON
 }
 JSON
   echo "$RUNDIR"
+}
+
+# rc2_rotate_journal <rundir> — bound the re-hydration cost. journal.md is append-only and grows
+# unbounded, but a resume only ever needs its TAIL (doctrine 40). When it exceeds RC2_JOURNAL_KEEP lines
+# (default 200), roll the older body entries into journal.archive.md (kept on disk as history, never read
+# on resume) and leave the header + a pointer + the last RC2_JOURNAL_KEEP lines in journal.md. Called from
+# hunt at launch, BEFORE the agent starts, so it never races the agent's own appends. Off: RC2_JOURNAL_KEEP=0.
+rc2_rotate_journal() {
+  local rundir="$1" keep="${RC2_JOURNAL_KEEP:-200}" j="$1/journal.md" a="$1/journal.archive.md" n end
+  [ "${keep:-0}" -gt 0 ] || return 0
+  [ -f "$j" ] || return 0
+  n=$(wc -l < "$j" 2>/dev/null || true); n=${n:-0}
+  [ "$n" -gt "$((keep+2))" ] || return 0                 # header + pointer + <=keep body lines: nothing new to roll
+  end=$((n - keep))                                      # archive body lines 2..end; keep the last $keep
+  { [ -s "$a" ] || printf '# Journal archive — rolled-over entries (NOT read on resume; full history only)\n'; \
+    sed -n "2,${end}p" "$j"; } >> "$a" 2>/dev/null
+  { sed -n '1p' "$j"; printf '_(older entries rolled to journal.archive.md — this is the tail; full history there)_\n'; tail -n "$keep" "$j"; } > "$j.tmp" 2>/dev/null \
+    && mv "$j.tmp" "$j" 2>/dev/null || rm -f "$j.tmp" 2>/dev/null
 }
 
 # ── prompt assembly ──────────────────────────────────────────────────────────
@@ -359,10 +377,13 @@ rc2_write_status() {
       jq -r '(.surfaces // {}) | to_entries | sort_by(-.value) | if length>0 then "  - surfaces: " + ([.[] | "\(.key):\(.value)"] | join("  ")) else empty end' "$L/accounting.json" 2>/dev/null || true
     fi
     echo
-    echo "## journal (recent)"; tail -15 "$rundir/journal.md" 2>/dev/null | sed 's/^/  /'
+    # journal is NOT re-dumped here (it is the agent's own file — avoid duplicating it into status);
+    # just a one-line pointer to the latest entry for the operator's at-a-glance.
+    echo "## journal"; printf -- '- last: %s\n' "$(tail -1 "$rundir/journal.md" 2>/dev/null | cut -c1-200)"
+    echo "  (full trail in journal.md — not duplicated here)"
     echo
-    echo "## recent tool calls (last 15)"
-    rc2_tl_recent "$L/tools.jsonl" 15
+    echo "## recent tool calls (last 10)"
+    rc2_tl_recent "$L/tools.jsonl" 10
     echo
     echo "## tmux sessions"
     tmux ls -F '#{session_name}  (#{session_windows}w)' 2>/dev/null | grep -E "^${tb}" | sed 's/^/- /' || echo "- (none)"
