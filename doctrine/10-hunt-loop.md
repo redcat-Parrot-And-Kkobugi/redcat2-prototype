@@ -88,28 +88,31 @@ pass and why**. Choose it by expected value, not by habit:
   absent, the move is not to keep trying to produce it — it is to list what *is* there and escalate with
   that. Catching yourself write off a context after testing only the escape you had in mind is the
   signal to do this.
-- **A higher-privilege context is itself most of the win — mine it from the inside, don't just try to
-  leave it by one planned door.** The instant you reach something that runs above you — a privileged or
-  root container, a setuid context, a root daemon whose input you control — the job stops being "run the
-  one escape I planned" and becomes "**inventory this context and act on whatever is actually here.**"
-  Hunt **processes** as hard as you hunt mounts/devices: `ps -ef`/`ps aux`, `/proc/*/status` (Uid/Gid,
-  `CapEff`), `/proc/*/cmdline`, `/proc/*/environ` — *what runs as root or with caps you lack*, and whether
-  you can **interact with or pivot through it**: a socket or pipe it serves, a file/dir/config it reads
-  that you can write, a shared PID/mount/net namespace, an argument/env/job it consumes, a token or key in
-  its environment. In a *privileged* container the host is usually one step away from the inside — raw
-  block devices in `/dev` you can mount, `CAP_SYS_ADMIN`/`CAP_SYS_PTRACE` you can wield, the host
-  filesystem or a root process already visible. Do not leave a root context having only checked that your
-  single pre-chosen escape was missing.
-- **An ephemeral or unstable higher-privilege context is a *delivery* constraint, not a dead end.** Short-
-  lived, one-shot-per-invocation, or dropping on a keep-alive/409/timeout does **not** close the context —
-  it just means you get one shot, so **shrink the plan to fit one shot**: stage a single self-contained
-  **enumerate-then-act** payload (inventory + decide + exfil/act in one non-interactive run, results pushed
-  out to you) instead of fighting to hold a persistent interactive shell you then enumerate by hand. One
-  clean shot inside a root context beats a hundred retries aimed at producing a persistent shell or one
-  specific primitive you have already proven absent. "I can't keep it alive long enough to do the thing I
-  planned" is the prompt to **change the thing you planned**, never to abandon the context — and never to
-  declare a blocker (`00` → Done: a shallow higher-privilege dismissal is exactly what the surrender gate
-  re-opens).
+- **Crossing into a higher-privilege context *is* most of the win — the next primitive is usually already
+  inside it, so inventory the context before you try to leave it by the door you came for.** "Higher
+  privilege" is tech-agnostic: a more powerful account or role, a process / service / scheduled job running
+  as someone above you, a container / VM / sandbox, a SUID or token or session you just assumed. You have
+  climbed a rung of the privilege ladder (`worldmodel.md` → privilege map), so **re-orient from the new
+  vantage** rather than firing the one escape you planned on the way in. Ask, in whatever form the
+  technology takes: *who am I now and what do I hold* — identity, groups/role, privileges/capabilities,
+  integrity/trust level; *what runs alongside me more privileged than me, and does any input I control
+  reach it* — the other processes/services/jobs here, their owners, and the files/sockets/queues/arguments/
+  secrets they consume that I can write or influence; *what does this context reach that I could not before*
+  — filesystems, other hosts, credentials, networks, APIs. Let the inventory choose the primitive. *How* you
+  take that inventory is environment-specific and is **not** a fixed list — on a Unix host `id`/`ps`/
+  `/proc/*/status`/`capsh`/`mount`; on Windows `whoami /all`/`tasklist`/service & token privileges; for a
+  database or cloud role, its grants and what they unlock — but the three questions are the same everywhere.
+  The higher-privilege crossing is the moment that reflex matters most: spend the vantage, don't waste it
+  re-trying the one door you came for.
+- **A higher-privilege context that is short-lived, one-shot, or unstable is a *delivery* constraint, not a
+  dead end.** Whether it runs once and exits, is rebuilt on each invocation, or drops on a timeout/error, the
+  context is **not** closed — you simply get one shot, so **shrink the plan to fit one shot**: a single
+  self-contained *inventory-then-act* that reports its findings back to you, instead of a persistent
+  interactive foothold you hold open and explore by hand. One clean shot in a higher-privilege context beats
+  a hundred retries aimed at producing a persistent handle, or the one primitive your own evidence already
+  says is absent. "I can't hold it long enough to do what I planned" means **change what you planned**, never
+  abandon the context — and never bank it as a blocker (`00` → Done: a shallow higher-privilege dismissal is
+  exactly what the surrender gate re-opens).
 
 If no hypothesis has meaningful confidence, your ORIENT output is "I lack information"
 and the pass becomes an enumeration/observation pass, not an attack.
