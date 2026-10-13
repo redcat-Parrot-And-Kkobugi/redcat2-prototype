@@ -33,6 +33,18 @@ rc2_load_env() {
   : "${RC2_SURRENDER_MAX:=2}"      # max times the surrender gate may re-open a blocker and relaunch
   : "${RC2_SURRENDER_MODEL:=claude-opus-4-8}" # surrender-gate re-audit: an opus reviewer, capped at 4.8 (never 5.x)
   export RC2_CEIL RC2_WARN RC2_BUDGET_DEFAULT RC2_REPEAT_FREEZE RC2_STALL RC2_GATE_N RC2_GATE_MODE GUARD_WATCH_INTERVAL GUARD_JUDGE_MODEL RC2_SURRENDER_MAX RC2_SURRENDER_MODEL
+
+  # ── prompt-cache / relaunch efficiency ────────────────────────────────────────
+  # The real lever for "don't re-pay the whole context on every relaunch" is SERVER-SIDE prompt caching —
+  # there is NO local prompt cache (verified: code.claude.com/docs/en/prompt-caching). The doctrine system
+  # prompt is byte-stable across relaunches, so a longer cache TTL lets a relaunch (or a re-spawned
+  # sub-agent) WITHIN the window reuse the cached prefix instead of re-billing ~15K tokens. 1h needs OAuth
+  # (subscription) — ANTHROPIC_API_KEY is unset above, which would otherwise force 5m. Reads are 0.1x, so
+  # on a hunt that relaunches/forks many times within the hour this is a large net win. Override in .env.
+  : "${CLAUDE_CODE_PROMPT_CACHE_TTL:=1h}"            # orchestrator main conversation
+  : "${CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL:=1h}"  # researcher/reverser/exploit-dev/... reuse their stable prefix
+  : "${DISABLE_AUTOUPDATER:=1}"                      # an auto-update between relaunches would cost a cold turn
+  export CLAUDE_CODE_PROMPT_CACHE_TTL CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL DISABLE_AUTOUPDATER
 }
 
 # rc2_pin_model <requested> — cap OPUS at 4.8, leave every other model alone. Policy (operator has CVP,
