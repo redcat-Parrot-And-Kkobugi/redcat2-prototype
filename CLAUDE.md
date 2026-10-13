@@ -147,7 +147,9 @@ the zero-dependency default for everything else.
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
   `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `guard.sh` (set the
   guard's *live* level or `show` floor/live/effective — the guard's operator/oversee channel, §4a of
-  the GUIDE); `install_tools.sh`
+  the GUIDE); `replay.sh` (re-run `ledger.json` `confirmed_path` exploit scripts in order to
+  re-establish a proven chain on the live box instead of re-deriving it — the solver does this on
+  resume too); `install_tools.sh`
   (one-shot Kali toolset); `conv_fmt.py` (stream-json renderer); `auto_pr.sh` (optional dev-workflow
   Stop hook — branch→PR→merge, wired from a personal gitignored `.claude/settings.local.json`; not
   part of a hunt). `lib/tools_log.sh` holds the shared `logs/tools.jsonl` readers; `lib/guard_lib.sh`

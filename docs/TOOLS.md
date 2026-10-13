@@ -168,6 +168,27 @@ Appends every change to `logs/guard.log`. Reads nothing from, and never touches,
 
 ---
 
+## `replay.sh`
+
+Re-establishes a proven access chain by re-running the **confirmed_path** exploit scripts (from
+`ledger.json`) in order, instead of re-deriving them. The point: a captured foothold/priv-esc should
+be *replayed*, not re-reasoned every session (cheaper, faster, more reliable — see GUIDE §4a and
+doctrine 40 → Resume). The solver does this itself on resume; this is the operator's manual button.
+
+```
+scripts/replay.sh <run|name|ip>
+REPLAY_STEP_TIMEOUT=600 scripts/replay.sh Nimbus   # per-step timeout (default 300s)
+```
+
+- Reads `ledger.json` `.confirmed_path[].script`; `cd`s into the run dir, exports `target.env` (so each
+  script sees `$target_ip` etc.), and runs each `exploit/*.sh` in order. Each confirmed script is written
+  to **re-pull dynamic values** (IMDS/STS creds, tokens, a rotated flag), so replay works after the box
+  respawned to a new IP/flags.
+- **Fail-open per step:** a missing or failing step is reported ("re-derive this step") and replay
+  continues; exit code is non-zero if any step needs re-deriving. Nothing to replay yet → clean no-op.
+
+---
+
 ## `report.sh`
 
 Builds `writeup.md` and is auto-run by `hunt` on exit (safe standalone). Two parts, each refreshed
