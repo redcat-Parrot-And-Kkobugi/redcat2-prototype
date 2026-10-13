@@ -36,6 +36,11 @@ RC2_ROOT="$(cd "$(dirname "$0")" && pwd)"
 . "$RC2_ROOT/lib/bootstrap.sh"
 
 rc2_load_env
+# Pin the orchestrator to the 4.8 generation. A bare alias (opus/sonnet/haiku) or a Claude-5 id trips
+# the real-time cyber safeguard harder than 4.8, and every sub-agent + judge is already pinned there —
+# so keep one consistent generation. Explicit claude-*-4-* passes through; RC2_NO_PIN=1 opts out.
+_req_model="$MODEL"; MODEL="$(rc2_pin_model "$MODEL")"
+[ "$MODEL" != "$_req_model" ] && echo "[model] orchestrator '$_req_model' -> pinned $MODEL (RC2_NO_PIN=1 to override)"
 rc2_ensure_htb_token || true          # HAR -> live token (name targets need it; IP targets continue without)
 rc2_resolve_target "$TARGET"
 RUNDIR="$(rc2_scaffold)"
@@ -73,7 +78,7 @@ rc2_status_writer "$RUNDIR" & STATUS_PID=$!
 GUARD_WATCH_PID=""
 if { rc2_guard_core_on || [ "${RC2_GUARD_WATCH:-0}" = "1" ]; } && [ "${NO_GUARD_WATCH:-0}" != "1" ]; then
   rc2_guard_watcher "$RUNDIR" & GUARD_WATCH_PID=$!
-  echo "[guard] sameness watcher on (judge=${GUARD_JUDGE_MODEL:-sonnet}, every ${GUARD_WATCH_INTERVAL:-180}s, stall=${RC2_STALL:-12})"
+  echo "[guard] sameness watcher on (judge=${GUARD_JUDGE_MODEL:-claude-opus-4-8}, every ${GUARD_WATCH_INTERVAL:-180}s, stall=${RC2_STALL:-12})"
 fi
 
 # supervisor/critic alongside the hunt: a herdr sibling pane when running inside herdr, else a
