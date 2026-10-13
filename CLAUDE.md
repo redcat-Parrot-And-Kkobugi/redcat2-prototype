@@ -18,6 +18,8 @@ looping until the flags fall. The agent reasons from evidence and live research,
 
 The full operator reference — setup, every command and flag, every script, tmux/herdr,
 reversing, resume, observability, and troubleshooting — is `docs/GUIDE.md` (and `README.md`).
+The **design rationale** — the whole pipeline, why it is shaped this way, the guard's failure-mode
+model, the data model, and the invariants (with ASCII diagrams) — is `docs/DEVELOPER.md`.
 This file is the orientation for working *on* the codebase.
 
 ## How it runs
