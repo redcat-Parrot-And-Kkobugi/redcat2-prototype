@@ -28,26 +28,29 @@ rc2_load_env() {
   : "${RC2_GATE_N:=2}"             # consecutive same-focus rabbit-hole reviews before oversee raises the live mode
   : "${RC2_GATE_MODE:=block}"      # mode oversee escalates the live tier to on consensus
   : "${GUARD_WATCH_INTERVAL:=180}" # sameness-judge watcher cadence, seconds
-  : "${GUARD_JUDGE_MODEL:=claude-opus-4-8}" # sameness judge. PINNED to 4.8: Claude-5 aliases (sonnet/opus/
-                                            # haiku) trip the real-time cyber safeguard on this work.
+  : "${GUARD_JUDGE_MODEL:=sonnet}" # sameness judge (haiku=cheaper/coarser; sonnet=safer). Operator has CVP,
+                                   # so sonnet is fine here; only opus is capped at 4.8 (see rc2_pin_model).
   : "${RC2_SURRENDER_MAX:=2}"      # max times the surrender gate may re-open a blocker and relaunch
-  : "${RC2_SURRENDER_MODEL:=claude-opus-4-8}" # surrender-gate re-audit model (same 4.8 pin, same reason)
+  : "${RC2_SURRENDER_MODEL:=claude-opus-4-8}" # surrender-gate re-audit: an opus reviewer, capped at 4.8 (never 5.x)
   export RC2_CEIL RC2_WARN RC2_BUDGET_DEFAULT RC2_REPEAT_FREEZE RC2_STALL RC2_GATE_N RC2_GATE_MODE GUARD_WATCH_INTERVAL GUARD_JUDGE_MODEL RC2_SURRENDER_MAX RC2_SURRENDER_MODEL
 }
 
-# rc2_pin_model <requested> — normalize a model arg to the 4.8 pin. The real-time cyber safeguard is
-# CONTENT-based (it trips on host-escape work regardless of model), but the Claude-5 aliases
-# (opus/sonnet/haiku, and any claude-*-5-* id) trip it HARDER and more often than 4.8 — and every
-# sub-agent + out-of-band judge here is already pinned to claude-opus-4-8 — so the orchestrator is
-# pinned to the same generation for one consistent, less-interrupted model across the whole hunt.
-# An explicit 4.x id (claude-*-4-*) is honoured as-is. Escape hatches: RC2_NO_PIN=1 disables the
-# policy entirely; RC2_PIN_MODEL overrides the pin target (e.g. a vetted CYBER_FALLBACK_MODEL).
+# rc2_pin_model <requested> — cap OPUS at 4.8, leave every other model alone. Policy (operator has CVP,
+# so Claude-5 trips are reduced and sonnet/haiku are fine to use): opus 5.x is the one model that must
+# never be called here (it still trips the cyber safeguard hardest and is the costliest), so any opus
+# reference above 4.8 — the bare `opus` alias (resolves to newest = 5.x) and any claude-opus-5+ id — is
+# pinned down to claude-opus-4-8. Opus 4.x (incl. claude-opus-4-8) is honoured. Sonnet, haiku, and any
+# non-opus id pass through UNCHANGED. Escape hatches: RC2_NO_PIN=1 disables; RC2_PIN_MODEL overrides the
+# opus cap target (e.g. a vetted CYBER_FALLBACK_MODEL).
 rc2_pin_model() {
   local m="${1:-claude-opus-4-8}" pin="${RC2_PIN_MODEL:-claude-opus-4-8}"
   [ "${RC2_NO_PIN:-0}" = "1" ] && { printf '%s' "$m"; return; }
   case "$m" in
-    claude-*-4-*) printf '%s' "$m" ;;    # explicit 4.x id — honour it
-    *)            printf '%s' "$pin" ;;   # bare alias / Claude-5 id / unknown -> pin to 4.8
+    opus)                printf '%s' "$pin" ;;   # bare alias -> newest opus (5.x); cap to 4.8
+    claude-opus-4-*)     printf '%s' "$m" ;;      # opus 4.x (incl. 4-8) -> allowed, keep
+    claude-opus-[5-9]*)  printf '%s' "$pin" ;;    # opus 5.x and up -> cap to 4.8
+    claude-opus-*)       printf '%s' "$pin" ;;    # any other opus id -> cap (safe default)
+    *)                   printf '%s' "$m" ;;      # sonnet / haiku / non-opus -> leave UNCHANGED
   esac
 }
 
