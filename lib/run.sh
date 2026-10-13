@@ -95,6 +95,7 @@ MD
     "H1": { "claim": "The exposed surface is unknown and must be mapped before any attack", "target": "full surface", "status": "open", "budget_max": ${RC2_BUDGET_DEFAULT:-8}, "freeze": { "frozen": false, "confidence": null, "reason": "", "by": "self", "resumable": true, "at": "" } }
   },
   "confirmed_path": [],
+  "negatives": [],
   "override": null
 }
 JSON
@@ -361,15 +362,27 @@ rc2_claude_oneshot() {
   printf '%s' "$out"
 }
 
+# rc2_negatives <rundir> — the agent's recorded NEGATIVES ("X absent/refuted/mock/closed…"): the one
+# material both the surrender gate (re-audit) and the contradiction check read. Prefers the STRUCTURED
+# list in ledger.json (`.negatives[]` = {fact, confidence, tested}) and always also folds in free-text
+# matches from worldmodel/hypotheses, so it works before (or if) the agent mirrors them. Single
+# definition of "what counts as a negative".
+rc2_negatives() {
+  local rundir="$1" led="$1/ledger.json"   # $1 (not $rundir) — same-statement local won't see $rundir yet
+  jq -r '.negatives[]? | "- \(.fact)  [conf:\(.confidence // "?") · tested:\(.tested // "?")]"' "$led" 2>/dev/null
+  grep -hiE 'closed|refuted|mock|absent|not present|no .*(sock|mount|priv)|dropped|denied|impossible|conf:[[:space:]]*(med|high)' \
+    "$rundir/worldmodel.md" "$rundir/hypotheses.md" 2>/dev/null | cut -c1-200 | head -30
+}
+
 # rc2_run_sameness_judge <rundir> <hypo> — echoes the judge's one-line verdict JSON (or nothing).
 rc2_run_sameness_judge() {
-  local rundir="$1" h="$2" led="$rundir/ledger.json" J="$rundir/logs/tools.jsonl"
+  local rundir="$1" h="$2" led="$1/ledger.json" J="$1/logs/tools.jsonl"   # $1 not $rundir (same-local gotcha)
   local claim target recent wm model="${GUARD_JUDGE_MODEL:-sonnet}" prompt
   claim="$(jq -r --arg h "$h" '.hypotheses[$h].claim // "?"' "$led" 2>/dev/null)"
   target="$(jq -r --arg h "$h" '.hypotheses[$h].target // "?"' "$led" 2>/dev/null)"
   recent="$(grep '"event":"pre"' "$J" 2>/dev/null | tail -24 | jq -r '(.command // .tool // "?")' 2>/dev/null | cut -c1-200)"
   wm="$(tail -40 "$rundir/worldmodel.md" 2>/dev/null)"
-  local negs; negs="$(grep -iE 'closed|refuted|mock|absent|not present|no .*(sock|mount|priv)|dropped|denied|impossible|conf:[[:space:]]*(med|high)' "$rundir/worldmodel.md" "$rundir/hypotheses.md" 2>/dev/null | cut -c1-200 | head -30)"
+  local negs; negs="$(rc2_negatives "$rundir")"
   # prompt built with printf %s so logged commands (which may contain $(), backticks) are NEVER expanded
   prompt="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s' \
     "Hypothesis under scrutiny ($h): \"$claim\"  (target: $target)." \
@@ -384,7 +397,7 @@ rc2_run_sameness_judge() {
 # rc2_guard_commit_freeze <rundir> <hypo> <confidence> <reason> — authoritative freeze in accounting
 # (solver cannot clear it) + mirror into ledger (the model's view) + journal/guard.log note.
 rc2_guard_commit_freeze() {
-  local rundir="$1" h="$2" conf="$3" reason="$4" acct="$rundir/logs/accounting.json" led="$rundir/ledger.json"
+  local rundir="$1" h="$2" conf="$3" reason="$4" acct="$1/logs/accounting.json" led="$1/ledger.json"   # $1 not $rundir (same-local gotcha)
   local resumable=true; [ "$conf" = "high" ] && resumable=false
   rc2_json_update "$acct" '.arbiter_freezes[$h]={confidence:$c,reason:$r,resumable:$res,by:"arbiter",at:(now|todate)} | .freeze_candidate=null' \
      --arg h "$h" --arg c "$conf" --arg r "$reason" --argjson res "$resumable"
@@ -392,6 +405,27 @@ rc2_guard_commit_freeze() {
      --arg h "$h" --arg c "$conf" --arg r "$reason" --argjson res "$resumable"
   printf '%s ARBITER FROZE %s (conf=%s): %s — switch hypotheses (one-shot override in ledger.json if you truly disagree).\n' "$(rc2_utc)" "$h" "$conf" "$reason" >> "$rundir/journal.md" 2>/dev/null || true
   printf '%s froze %s conf=%s: %s\n' "$(rc2_utc)" "$h" "$conf" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
+}
+
+# rc2_guard_contradiction_signal <rundir> <hypo> <verdict-json> — if the judge flagged a self-
+# contradiction (recent actions presuppose a fact recorded absent/refuted), signal the solver via a
+# supervisor tick (debounced per-contradiction) to re-test that negative or open-enumerate. Else no-op.
+rc2_guard_contradiction_signal() {
+  local rundir="$1" cur="$2" v="$3" acct="$1/logs/accounting.json" contra cfp last_cfp
+  contra="$(printf '%s' "$v" | jq -r '.contradiction // ""' 2>/dev/null | cut -c1-160)"
+  [ -n "$contra" ] && [ "$contra" != "null" ] || return 0
+  cfp="$(printf '%s' "$contra" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"; [ -n "$cfp" ] || return 0
+  last_cfp="$(jq -r '.supervisor.last_contradiction_fp // ""' "$acct" 2>/dev/null)"
+  [ "$cfp" != "$last_cfp" ] || return 0   # debounce: only a NEW contradiction
+  rc2_write_supervisor "$rundir" "self-contradiction" "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s' \
+    "_the sameness judge caught you presupposing a fact you recorded as absent/refuted_" \
+    "STATUS: minor-drift" \
+    "FOCUS: contradiction-$cfp" \
+    "READ: your recent actions presuppose '$contra' — but your own worldmodel records it absent/refuted." \
+    "STOP: chasing that want." \
+    "DO NEXT: either RE-TEST that negative properly if your evidence for it was shallow (doctrine 00/40 — a shallow negative is a hypothesis, not a fact), or DROP the want and OPEN-ENUMERATE the context (doctrine 10 — do not just check for the primitive you wanted; list what is actually present).")" >/dev/null
+  rc2_json_update "$acct" '.supervisor.last_contradiction_fp=$f' --arg f "$cfp"
+  printf '%s judge: CONTRADICTION on %s — presupposing refuted: %s\n' "$(rc2_utc)" "$cur" "$contra" >> "$rundir/logs/guard.log" 2>/dev/null || true
 }
 
 # rc2_guard_watcher <rundir> — periodic loop (GUARD_WATCH_INTERVAL, default 180s). Triggers the judge
@@ -419,25 +453,7 @@ rc2_guard_watcher() {
       verdict="$(printf '%s' "$v" | jq -r '.verdict // empty' 2>/dev/null)"
       conf="$(printf '%s' "$v" | jq -r '.confidence // "med"' 2>/dev/null)"
       reason="$(printf '%s' "$v" | jq -r '.reason // "sameness judge"' 2>/dev/null | cut -c1-160)"
-      # self-contradiction signal (fires on EITHER verdict): agent presupposes a fact it recorded
-      # absent/refuted → tell it, via a supervisor tick, to re-test that negative or open-enumerate.
-      local contra cfp last_cfp
-      contra="$(printf '%s' "$v" | jq -r '.contradiction // ""' 2>/dev/null | cut -c1-160)"
-      if [ -n "$contra" ] && [ "$contra" != "null" ]; then
-        cfp="$(printf '%s' "$contra" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9')"
-        last_cfp="$(jq -r '.supervisor.last_contradiction_fp // ""' "$acct" 2>/dev/null)"
-        if [ -n "$cfp" ] && [ "$cfp" != "$last_cfp" ]; then   # debounce: only on a NEW contradiction
-          rc2_write_supervisor "$rundir" "self-contradiction" "$(printf '%s\n\n%s\n%s\n%s\n%s\n%s' \
-            "_the sameness judge caught you presupposing a fact you recorded as absent/refuted_" \
-            "STATUS: minor-drift" \
-            "FOCUS: contradiction-$cfp" \
-            "READ: your recent actions presuppose '$contra' — but your own worldmodel records it absent/refuted." \
-            "STOP: chasing that want." \
-            "DO NEXT: either RE-TEST that negative properly if your evidence for it was shallow (doctrine 00/40 — a shallow negative is a hypothesis, not a fact), or DROP the want and OPEN-ENUMERATE the context (doctrine 10 — do not just check for the primitive you wanted; list what is actually present).")" >/dev/null
-          rc2_json_update "$acct" '.supervisor.last_contradiction_fp=$f' --arg f "$cfp"
-          printf '%s judge: CONTRADICTION on %s — presupposing refuted: %s\n' "$(rc2_utc)" "$cur" "$contra" >> "$rundir/logs/guard.log" 2>/dev/null || true
-        fi
-      fi
+      rc2_guard_contradiction_signal "$rundir" "$cur" "$v"   # supervisor signal iff judge flagged a self-contradiction
       if [ "$verdict" = "SAME" ] && { [ "$conf" = "med" ] || [ "$conf" = "high" ]; }; then
         rc2_guard_commit_freeze "$rundir" "$cur" "$conf" "$reason"
       else
@@ -463,7 +479,7 @@ rc2_surrender_gate() {
   local rundir="$1" model="${RC2_SURRENDER_MODEL:-opus}" prompt wm negs surf blocker
   wm="$(sed -n '/## Privilege map/,/## Open questions/p' "$rundir/worldmodel.md" 2>/dev/null | head -60)"
   [ -n "$wm" ] || wm="$(head -80 "$rundir/worldmodel.md" 2>/dev/null)"
-  negs="$(grep -iE 'closed|refuted|mock|not present|no .*(sock|mount|priv)|dropped|denied|impossible' "$rundir/worldmodel.md" "$rundir/hypotheses.md" 2>/dev/null | cut -c1-220 | head -40)"
+  negs="$(rc2_negatives "$rundir")"
   surf="$(jq -r '.surfaces // {} | to_entries[]? | "  \(.key): \(.value)"' "$rundir/logs/accounting.json" 2>/dev/null | sort -t: -k2 -rn | head -20)"
   blocker="$(tail -40 "$rundir/journal.md" 2>/dev/null)"
   prompt="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s' \
