@@ -112,6 +112,35 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `HAR_SRC` | Windows DevTools folder | where to import the newest HAR from |
 | `FRESH` | — | same as `--fresh` |
 
+**Model pinning (`rc2_pin_model`, `lib/env.sh`) — caps opus at 4.8:**
+
+| var | default | effect |
+|---|---|---|
+| `RC2_PIN_MODEL` | `claude-opus-4-8` | the id a capped opus is pinned **to**. A bare `opus` alias or any `claude-opus-5+` id → this; sonnet/haiku and `claude-opus-4-*` pass through unchanged (the cyber safeguard trips hardest on Claude-5 opus) |
+| `RC2_NO_PIN` | `0` | `1` = disable the opus cap entirely (use the model exactly as requested) |
+
+**Prompt-cache / relaunch efficiency (`lib/env.sh`; caching is server-side, no local cache):**
+
+| var | default | effect |
+|---|---|---|
+| `CLAUDE_CODE_PROMPT_CACHE_TTL` | `1h` | orchestrator cache TTL — a relaunch within the window reuses the byte-stable doctrine prefix (OAuth-only; `ANTHROPIC_API_KEY` is unset to keep 1h eligibility) |
+| `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` | same, for Task sub-agents reusing their stable prefix |
+| `DISABLE_AUTOUPDATER` | `1` | an auto-update between relaunches would cost one cold turn |
+
+**Attempt watchdog, journal rollover, target-health (all per-run, `lib/run.sh`):**
+
+| var | default | effect |
+|---|---|---|
+| `RC2_HEARTBEAT` | `60` | emit a `[hunt] attempt N live …` heartbeat to the terminal every N s so a long attempt doesn't look paused (`0` = off) |
+| `RC2_CYBER_SPIN` | `10` | kill an attempt once it has tripped the cyber safeguard this many times in one session — a fresh session re-trips the same content (`0` = off) |
+| `RC2_HANG_KILL` | `600` | kill an attempt that has emitted nothing for this many s (wedged → relaunch) (`0` = off) |
+| `RC2_GUARD_TICK` | `15` | watchdog poll cadence (s) |
+| `RC2_JOURNAL_KEEP` | `200` | at launch, roll `journal.md` older than the last N lines into `journal.archive.md` (bounds resume re-hydration; `0` = off) |
+| `NO_HEALTH` | `0` | `1` = don't start the target-health watcher |
+| `HEALTH_INTERVAL` | `30` | target liveness probe cadence (s) → `target_health.md` |
+| `HEALTH_PORTS` | `22 80 443` | ports the health watcher probes for UP/DOWN |
+| `HEALTH_IP_RECHECK` | `90` | while the box is DOWN, re-query the HTB API this often; on a new respawn IP, rewrite `target.env` + flag **TARGET MOVED** |
+
 **Guard / anti-rabbit-hole (see [§4a](#4a-the-guard--anti-rabbit-hole-enforcement); all off by default):**
 
 | var | default | effect |
@@ -129,7 +158,7 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `GUARD_JUDGE_MODEL` | `sonnet` | model for the out-of-band sameness judge (`haiku` = cheaper/coarser) |
 | `GUARD_WATCH_INTERVAL` | `180` | sameness-judge watcher cadence (s) |
 | `RC2_SURRENDER_MAX` | `2` | max times the surrender gate may re-open a blocker and relaunch (`0` disables) |
-| `RC2_SURRENDER_MODEL` | `opus` | model for the independent surrender-gate re-audit (high stakes → opus) |
+| `RC2_SURRENDER_MODEL` | `claude-opus-4-8` | model for the independent surrender-gate re-audit (an opus reviewer, capped at 4.8 — never 5.x) |
 | `NO_SURRENDER` | `0` | `1` = never run the surrender gate (accept a clean-exit blocker as-is) |
 
 All guard defaults live in **one place** — `lib/env.sh` — and are overridable via `.env` or the launch env.
@@ -292,9 +321,12 @@ The **three living files** are rewritten every loop:
 Raw evidence and auto files alongside:
 
 ```
-target.env   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/
+target.env   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/ cache/
 flags.txt    user=<hex> / root=<hex>  (recorded instantly; submitted per §11)
+journal.archive.md   entries rolled out of journal.md (RC2_JOURNAL_KEEP); history, NOT read on resume
+cache/       run-local scratch only — NOT Claude's config/cache (relocating CLAUDE_CONFIG_DIR would break user MCP)
 status.md    auto snapshot every ~10 min (read-only to the agent); shows guard floor/live/effective
+target_health.md   auto UP/DOWN/MOVED box signal (rc2_health_watcher); read it on mass connection failures
 writeup.md   live "Confirmed path" block (updated as steps confirm) + metrics (report.sh, on exit)
 failure_analysis.md/.json   why the run went as it did (analyze_run.sh, on exit)
 supervisor.md   reviewer verdicts, when oversee is running
@@ -305,9 +337,11 @@ logs/        conv.jsonl (full conversation), tools.jsonl + raw/ (every tool call
 .claude/     settings.json (logging + guard hook) + agents → ../../.claude/agents
 ```
 
-Resume reads, in order: `worldmodel.md` → `hypotheses.md` → tail of `journal.md` → `flags.txt`
-(`ledger.json` / `logs/accounting.json` persist the guard state across the restart, so a frozen
-hypothesis stays frozen for the fresh instance).
+Resume reads a fixed **resume kernel**, in order: top of `worldmodel.md` → ranked `hypotheses.md` →
+tail of `journal.md` → `ledger.json`'s `confirmed_path` → `flags.txt` — and nothing else to rebuild
+state (not `status.md`, `journal.archive.md`, or raw `logs/`/`enum/`, which only re-pay context the
+kernel already gives). `ledger.json` / `logs/accounting.json` persist the guard state across the
+restart, so a frozen hypothesis stays frozen for the fresh instance.
 
 ---
 
@@ -397,7 +431,13 @@ drive the real service with the exploit `exploit-dev` builds.
   headless agent that resumes from disk, up to `MAX_RESTARTS` (default 20). A clean exit (flags, or
   a written blocker) is respected and not relaunched. `NO_RESTART=1` runs once. Each relaunch prints
   the target line and, if the box was respawned to a new IP, refreshes it from the HTB API (updating
-  `target.env`).
+  `target.env`). Between relaunches, `rc2_health_watcher` also refreshes the IP **mid-run** (every
+  `HEALTH_IP_RECHECK` while the box is down), so a respawn during a long "waiting for the box" session
+  no longer strands the agent on a dead IP.
+- **Per-launch reset:** every `./hunt` clears a prior run's stale `logs/.stop` before starting the
+  background loops (otherwise a resume would kill flag-submit/guard/health at t=0), rolls `journal.md`
+  over `RC2_JOURNAL_KEEP` lines into `journal.archive.md`, and re-applies `RC2_CEIL`/`RC2_WARN` to the
+  resume-preserved `logs/accounting.json` so an operator ceiling override takes effect on resume.
 - **Fresh:** `./hunt --fresh <target>` archives the old run to `runs/<slug>.bak.<epoch>` and starts
   clean.
 
@@ -455,6 +495,8 @@ drive the real service with the exploit `exploit-dev` builds.
 | target routes but unreachable (gateway says host-unreachable) | wrong VPN server/region — the machine lives on another server; connect the `.ovpn` where it's spawned (your HTB panel), or `VPN_AUTOFIX=1 ./hunt …` with `HTB_OVPN` set. Pre-flight now warns on this |
 | reviewer/agent "cyber-flagged" (safeguards) | a fresh session won't clear a content-based flag; set a `CYBER_FALLBACK_MODEL` / `OVERSEE_FALLBACK_MODEL` (less-restricted model) or apply to the Cyber Verification Program. oversee no longer writes a `supervisor.md` tick on a failed review; hunt caps cyber relaunches at `CYBER_MAX_RETRIES` |
 | agent keeps restarting | it's crashing/overflowing; check `logs/session_*.log`; `NO_RESTART=1` to stop the loop |
+| agent "spinning" / waiting on a dead box | the box likely reset/respawned to a new IP. `rc2_health_watcher` writes `target_health.md` (UP/DOWN/MOVED) and, on a new respawn IP, rewrites `target.env` + flags **TARGET MOVED**. Confirm the live IP with `scripts/machine.sh ip <name>`; a relaunch re-resolves it. (If the health watcher didn't run, check `logs/.stop` wasn't stale — `hunt` now clears it at launch.) |
+| attempt hangs / looks paused | a long attempt is silent in the main terminal by design; the watchdog emits a `[hunt] attempt N live …` heartbeat and kills a cyber-spin (`RC2_CYBER_SPIN`) or no-output wedge (`RC2_HANG_KILL`). Watch `scripts/watch.sh` for the real activity |
 | supervisor burning tokens | `NO_OVERSEE=1 ./hunt …` or raise `OVERSEE_INTERVAL` |
 | Burp tools missing | `scripts/burp.sh up` before `./hunt`; needs `BURP_MCP_TOKEN` |
 | gdb has no pwndbg/gef | launch `gdb-pwndbg`/`gdb-gef`, or `init-pwndbg` inside gdb |

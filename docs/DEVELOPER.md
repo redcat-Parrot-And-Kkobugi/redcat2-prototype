@@ -84,9 +84,12 @@ Read these together. The brain is prose; the team is prompts; the memory is file
     |                         logs/accounting.json + .guard_secret + .claude/settings.json(hook)
     |-- rc2_ensure_vpn        openvpn --daemon if HTB_OVPN set; reachability pre-flight
     |-- rc2_htb_owned_init    read owned-flag status -> logs/.flag_mode = live | defer
+    |-- (launch reset)        clear stale logs/.stop; rc2_rotate_journal (journal.md->journal.archive.md);
+    |                         reapply RC2_CEIL/RC2_WARN into logs/accounting.json   (BEFORE watchers)
     |
     |-- rc2_flag_watcher &    bg: submit user/root as captured (dedup incl. per-value bad-dedup)
     |-- rc2_status_writer &   bg: status.md every ~600s + live confirmed-path -> writeup.md
+    |-- rc2_health_watcher &  bg: target_health.md UP/DOWN; on respawn-IP rewrite target.env + MOVED
     |-- rc2_guard_watcher &   bg: sameness judge + contradiction signal  (only if guard on)
     |-- rc2_launch_oversee    supervisor (herdr pane, else tmux session)
     |
@@ -96,6 +99,8 @@ Read these together. The brain is prose; the team is prompts; the memory is file
     |  claude -p  (stream-json, --dangerously-skip-permissions)            |
     |    every tool call passes through lib/hook_log.sh (PreToolUse):      |
     |    force-log + anti-DoS repeat guard + P1 accounting/guard           |
+    |  _rc2_attempt_guard &  per-attempt watchdog: heartbeat / cyber-spin  |
+    |    kill (RC2_CYBER_SPIN) / no-output wedge kill (RC2_HANG_KILL)      |
     '----------------------------------------------------------------------'
          |  on exit:
          |    rc2_solved?            -> both flags present AND accepted -> DONE
@@ -125,6 +130,21 @@ Key design choices in the pipeline:
   accepted* by the lab (`logs/.submitted` has bare `user`+`root`, not `kind:bad:<flag>`), falling back
   to presence only in IP-only mode. A captured-but-wrong/stale flag no longer terminates the machine (a
   bug that once killed a box whose root was rejected).
+- **Opus is capped at 4.8; relaunches reuse server-side cache.** `rc2_pin_model` normalizes the
+  orchestrator model (and the frontmatter/judge/surrender/oversee models are pinned to match): a bare
+  `opus` or any `claude-opus-5+` → `claude-opus-4-8`; sonnet/haiku pass through. The real-time cyber
+  safeguard is *content*-based (it trips on 4.8 too), so the pin is about never paying for Claude-5 opus,
+  not about clearing the flag. Relaunch/sub-agent cost is cut by a 1h prompt-cache TTL on the byte-stable
+  doctrine prefix (there is **no** local prompt cache — server-side only; so `CLAUDE_CONFIG_DIR` is **not**
+  relocated into the run dir, which would move user-scope MCP and break burp + the reverser's ida-pro-mcp).
+- **Per-launch reset keeps resume honest.** A prior run's cleanup leaves `logs/.stop`; every background
+  loop exits on it, so `hunt` clears it before starting them (else a resume silently disables
+  flag-submit/guard/health at t=0). `rc2_rotate_journal` bounds re-hydration, and `RC2_CEIL`/`RC2_WARN`
+  are re-stamped into the resume-preserved `accounting.json` (the hook reads the ceiling from the file).
+- **The IP is reconciled mid-run, not only at relaunch.** `rc2_relaunch_target_line` refreshes the IP at
+  each relaunch boundary, but a box can respawn to a new IP *during* a long wait-for-box session;
+  `rc2_health_watcher` re-queries `htb_active` while the target is down and rewrites `target.env` + writes
+  **TARGET MOVED** so the agent re-points instead of waiting on a dead IP forever.
 
 ### The Hunt Loop (doctrine 10)
 
@@ -302,14 +322,17 @@ are read at point of use (operator intent, not defaults).
   runs/<slug>/
   |- worldmodel.md      VERIFIED facts only (incl. "## Privilege map"); reason FROM this
   |- hypotheses.md      ranked attack board; one block / hypothesis + evidence budget
-  |- journal.md         append-only decision trail (UTC-stamped)
+  |- journal.md         append-only decision trail (UTC-stamped); rolled over RC2_JOURNAL_KEEP lines
+  |- journal.archive.md rolled-out old journal entries - history, NOT read on resume
   |- ledger.json        machine mirror (INTENT): current hyp, confirmed_path, negatives, override
   |- flags.txt          user=<hex> / root=<hex>   (truncated each launch; re-captured)
   |- status.md          auto snapshot (~600s) - read-only to the agent
+  |- target_health.md   auto UP/DOWN/MOVED box signal (rc2_health_watcher) - read-only to the agent
   |- writeup.md         live "Confirmed path" block (above WRITEUP markers) + metrics on exit
   |- supervisor.md      reviewer verdicts (oversee / surrender gate / contradiction) - tick-gated
-  |- target.env         sourceable facts (target_ip, machine_id, tmux_base, ...)
+  |- target.env         sourceable facts (target_ip, machine_id, tmux_base, ...) - rewritten on IP move
   |- recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/   raw evidence
+  |- cache/             run-local scratch ONLY (not Claude's config/cache)
   `- logs/
      |- accounting.json   guard counters (ACCOUNTING - harness-owned)
      |- tools.jsonl       every tool call (pre+post) - forced by the hook

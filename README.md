@@ -43,7 +43,9 @@ disables it; `OVERSEE_INTERVAL=300` tunes the cadence.
 Re-run the same target to **resume** — state lives on disk, not in the transcript. Add
 `--fresh` to archive the old run and start clean. A crash or context overflow mid-hunt
 **auto-relaunches** and resumes from disk (budget `MAX_RESTARTS`, default 20; `NO_RESTART=1`
-to run once).
+to run once). If the box resets/respawns to a new IP mid-hunt, a background health watcher
+rewrites `target.env` and flags **TARGET MOVED** so the agent re-points instead of stalling on
+a dead IP. Relaunch cost is cut by a 1h server-side prompt-cache TTL on the stable doctrine prefix.
 
 **Watch it live** (second terminal) — the agent's reasoning plus every command and result:
 
@@ -92,8 +94,8 @@ Full methodology: [`doctrine/`](doctrine/). Start at
 | Layer | Where | Role |
 |---|---|---|
 | **Brain** | `doctrine/*.md` | The whole methodology, concatenated into the system prompt. Prose, not code. Edit this to change how the agent thinks. |
-| **Team** | `.claude/agents/*.md` | Multi-model sub-agents: `researcher` (sonnet), `recon-analyst` (haiku), `exploit-dev` (opus), `verifier` (opus), `reverser` (opus). One file each; add a specialist by adding a file. |
-| **Memory** | `runs/<slug>/` | Three living files — `worldmodel.md` (verified facts), `hypotheses.md` (attack board), `journal.md` (decision trail) — plus raw evidence dirs. Survives context resets. |
+| **Team** | `.claude/agents/*.md` | Multi-model sub-agents: `researcher` (sonnet), `recon-analyst` (haiku), `exploit-dev`/`verifier`/`reverser` (opus, pinned `claude-opus-4-8`). One file each; add a specialist by adding a file. Opus is capped at 4.8 everywhere (`rc2_pin_model`); only sonnet/haiku run Claude-5. |
+| **Memory** | `runs/<slug>/` | Three living files — `worldmodel.md` (verified facts), `hypotheses.md` (attack board), `journal.md` (decision trail) — plus `ledger.json`, raw evidence dirs, and auto read-only companions `status.md` / `target_health.md`. Survives context resets (resume reads a fixed kernel). |
 | **Plumbing** | `hunt`, `lib/`, `scripts/`, `tools/` | Launcher, env/HTB/VPN bootstrap, bundled HTB API client, HAR token extractor, tool-logging hook, flag auto-submit. |
 
 ## Layout
@@ -149,12 +151,13 @@ runs/<slug>/
   target.env                 sourceable facts: target_ip, machine_name, id, os, difficulty
   worldmodel.md              VERIFIED facts only
   hypotheses.md              ranked attack board (per-hypothesis evidence budgets)
-  journal.md                 append-only decision trail
+  journal.md                 append-only decision trail   journal.archive.md (rolled-out history)
   flags.txt                  user=<hex> / root=<hex>  (auto-submitted)
   writeup.md                 narrative + metrics (report.sh)   failure_analysis.md/.json (analyze_run.sh)
   supervisor.md              reviewer verdicts, if oversee.sh is running (solver follows it)
   status.md                  auto snapshot of the current situation, refreshed every ~10 min
-  recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/   raw evidence
+  target_health.md           auto UP/DOWN/MOVED box signal (read on mass connection failures)
+  recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/ cache/   raw evidence (+ run-local scratch)
   logs/                      conv.jsonl, tools.jsonl, raw/, system_prompt.txt, flag_submit.log
   .claude/                   settings.json (logging hook) + agents -> ../../.claude/agents
 ```

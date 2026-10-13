@@ -53,7 +53,14 @@ its full result independent of model behavior, and blocks (exit 2) identical-com
 repeats to guard the target against a stuck/throttle/DoS loop; a background watcher auto-submits
 captured flags. The whole
 HAR → token → resolve/spawn → submit pipeline is hands-off and model-independent. The default
-orchestrator model is **Opus 4.8** (`claude-opus-4-8`); pass a 2nd arg to override. On exit `hunt`
+orchestrator model is **Opus 4.8** (`claude-opus-4-8`); pass a 2nd arg to override. `rc2_pin_model`
+(`lib/env.sh`) then **caps opus at 4.8** — a bare `opus` alias (resolves to newest = 5.x) or any
+`claude-opus-5+` id is pinned to `claude-opus-4-8`, while sonnet/haiku and `claude-opus-4-*` pass through
+unchanged — because the real-time cyber safeguard trips hardest on Claude-5 opus (escape hatches:
+`RC2_NO_PIN=1`, `RC2_PIN_MODEL`). Relaunch/sub-agent re-spawn cost is cut by **server-side prompt caching**
+set to a 1h TTL (`CLAUDE_CODE_PROMPT_CACHE_TTL` / `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`, `lib/env.sh`): the
+byte-stable doctrine prefix is reused across relaunches within the window (OAuth-only, so `ANTHROPIC_API_KEY`
+stays unset). On exit `hunt`
 runs `report.sh` (writeup narrative + metrics → `writeup.md`) and `analyze_run.sh` (failure
 classification → `failure_analysis.md/.json`); on a **solve** it also **terminates the HTB machine**
 (unless `NO_STOP=1`) and tears down the run's tmux. Optionally run `scripts/oversee.sh <slug>` in a
@@ -81,7 +88,10 @@ The system has three layers; read them together:
   `reverser` (opus) does export-first IDA binary analysis. Each is
   one file with frontmatter (`name`, `description`, `tools`, `model`) + a focused prompt.
   **Adding a specialist = adding one file.** The run dir symlinks this directory in so
-  `claude -p` (cwd = run dir) sees the team.
+  `claude -p` (cwd = run dir) sees the team. The opus agents (`exploit-dev`, `verifier`, `reverser`) are
+  pinned to `claude-opus-4-8` in their frontmatter; `researcher` stays `sonnet` and `recon-analyst` `haiku`
+  (only opus is capped — see model pinning above). The sameness-judge (`GUARD_JUDGE_MODEL`) is `sonnet`;
+  the surrender gate (`RC2_SURRENDER_MODEL`) and oversee (`OVERSEE_MODEL`) are `claude-opus-4-8`.
 
 - **The memory is the run dir — three living files the agent rewrites every loop.**
   `worldmodel.md` (only VERIFIED facts), `hypotheses.md` (the ranked attack board with
@@ -89,8 +99,12 @@ The system has three layers; read them together:
   the machine-readable mirror of the board that the **guard** reads (the solver keeps it in sync;
   counters/arbiter-freezes live in the harness-owned `logs/accounting.json`). Raw evidence
   lives beside them under `recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/
-  logs/`. This is what lets a hunt outlive a single context window — the core requirement for
-  Insane boxes. See `doctrine/40-memory-and-state.md` for the exact formats.
+  logs/ cache/` (`cache/` is run-local scratch only — NOT Claude's config/cache). Auto-written,
+  read-only companions: `status.md` (operator dashboard), `target_health.md` (live UP/DOWN/MOVED box
+  signal from `rc2_health_watcher`), and `journal.archive.md` (entries rolled out of `journal.md` to
+  keep resume cheap — history, never re-read on resume). This is what lets a hunt outlive a single
+  context window — the core requirement for Insane boxes. See `doctrine/40-memory-and-state.md` for the
+  exact formats (incl. the explicit **resume kernel**: the minimal set read to rebuild state).
 
 ## Standalone — bundled plumbing
 
@@ -160,8 +174,20 @@ the zero-dependency default for everything else.
   flag is not re-hammered; `rc2_htb_owned_init` reads owned-status at launch → `logs/.flag_mode`
   `live` or `defer`-to-end), `rc2_status_writer` (rewrites `status.md` every 600s — flags, phase,
   hypotheses, the guard/ledger line, journal tail, recent tools, tmux, artifacts; also keeps a live
-  "Confirmed path" block in `writeup.md`), and — when a guard layer is on — `rc2_guard_watcher`.
-  The HTB spawn/IP wait is 15 tries × 180s = 45 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`).
+  "Confirmed path" block in `writeup.md`), `rc2_health_watcher` (probes the target every `HEALTH_INTERVAL`=30s
+  on `HEALTH_PORTS`="22 80 443" → `target_health.md` UP/DOWN; while DOWN it re-checks the HTB API every
+  `HEALTH_IP_RECHECK`=90s and, if the box respawned on a new IP, rewrites `target.env` + flags **TARGET MOVED**
+  so the agent stops waiting on a dead IP — `NO_HEALTH=1` to disable), and — when a guard layer is on —
+  `rc2_guard_watcher`. **All these loops exit on `logs/.stop`, so `hunt` clears a prior run's stale `.stop`
+  at launch** (before starting them) — otherwise a resume would silently kill flag-submit/guard/health at
+  t=0. The HTB spawn/IP wait is 15 tries × 180s = 45 min (`IP_WAIT_TRIES`/`IP_WAIT_INTERVAL`).
+- **Resilient run loop & launch reset.** `rc2_run_loop` guards each `claude -p` attempt with a backgrounded
+  `_rc2_attempt_guard`: a terminal **heartbeat** (`RC2_HEARTBEAT`=60s), a **cyber-spin kill** (`RC2_CYBER_SPIN`=10
+  safeguard trips in one session → kill it; a fresh session re-trips the same content), and a **wedge kill**
+  (`RC2_HANG_KILL`=600s with no output). At launch (before watchers) `hunt` also rolls `journal.md` over
+  `RC2_JOURNAL_KEEP`=200 lines into `journal.archive.md` (`rc2_rotate_journal`, bounds re-hydration) and
+  **re-applies `RC2_CEIL`/`RC2_WARN` to the resume-preserved `logs/accounting.json`** (the hook reads the
+  ceiling from the file, so an operator override would otherwise be ignored on resume).
 - **The guard (opt-in, off by default) covers BOTH failure modes.** It shares `ledger.json` (solver
   intent) + `logs/accounting.json` (harness counters — per-hypothesis **and per-surface** — solver-
   unwritable). *Against over-grinding:* the **hook** (per-call repeat/stall/frozen/ceiling warn-or-block
