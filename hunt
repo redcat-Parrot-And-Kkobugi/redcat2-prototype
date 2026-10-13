@@ -48,6 +48,22 @@ RUNDIR="$(rc2_scaffold)"
 : "${target_ip:?target_ip empty — set it in $RUNDIR/target.env and re-run}"
 rc2_rotate_journal "$RUNDIR"          # roll old journal entries to archive BEFORE launch (bounds each resume's re-hydration)
 
+# ── per-launch run-state reset (must run BEFORE any watcher starts) ───────────
+# A prior run's cleanup left logs/.stop as its "this run is over" flag; it is NOT cleared on scaffold, so
+# on a RESUME every `while [ ! -f .stop ]` watcher (flag-submit, guard/sameness-judge, status, target-
+# health) would see the stale flag at its first check and exit at t=0 — silently disabling live flag
+# submission, the rabbit-hole guard, and the health signal. Clear it so .stop means THIS run.
+rm -f "$RUNDIR/logs/.stop"
+# accounting.json is seeded only once (resume preserves it), so the operator's launch-env RC2_CEIL/RC2_WARN
+# would be ignored on a re-launch — the hook reads .global.ceiling/.warn_at from the file, not the env.
+# Re-apply them each launch so an operator override takes effect on resume too.
+if [ -s "$RUNDIR/logs/accounting.json" ]; then
+  jq --argjson c "${RC2_CEIL:-800}" --argjson w "${RC2_WARN:-450}" '.global.ceiling=$c | .global.warn_at=$w' \
+     "$RUNDIR/logs/accounting.json" > "$RUNDIR/logs/accounting.json.tmp" 2>/dev/null \
+     && mv "$RUNDIR/logs/accounting.json.tmp" "$RUNDIR/logs/accounting.json" 2>/dev/null \
+     || rm -f "$RUNDIR/logs/accounting.json.tmp" 2>/dev/null
+fi
+
 export TMPDIR="$RUNDIR/tmp"; mkdir -p "$TMPDIR"
 # Relaunch efficiency comes from SERVER-SIDE prompt caching (TTL in lib/env.sh), not a local cache —
 # Claude keeps no local prompt cache. runs/<slug>/cache/ exists for run-local scratch only; we do NOT
