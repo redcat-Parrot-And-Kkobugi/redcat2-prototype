@@ -92,6 +92,7 @@ Read these together. The brain is prose; the team is prompts; the memory is file
     |-- rc2_health_watcher &  bg: target_health.md UP/DOWN; on respawn-IP rewrite target.env + MOVED
     |-- rc2_guard_watcher &   bg: sameness judge + contradiction signal  (only if guard on)
     |-- rc2_launch_oversee    supervisor (herdr pane, else tmux session)
+    |-- rc2_launch_auditor    epistemic/conclusiveness auditor (herdr pane, else tmux session)
     |
     v
   rc2_run_loop
@@ -182,10 +183,12 @@ actually lost.** It is opt-in and OFF by default.
   ~186-416 calls.                           a confident (WRONG) blocker.
 
      caught by:                             caught by:
-       hook repeat / stall / ceiling        surrender gate (re-audit negatives)
-       sameness watcher (freeze)            negative provenance          (A)
-       oversee consensus gate               privilege-delta orientation   (B)
-                                            open-enumeration reflex        (E)
+       hook repeat / stall / ceiling        surrender gate (re-audit, clean-exit)
+       sameness watcher (freeze)            epistemic auditor (mid-run, raw logs)
+       oversee consensus gate               negative provenance          (A)
+                                            privilege-delta orientation   (B)
+                                            conclusiveness-governs-freeze  (G)
+                                            reason-from-artifact / open-enum (E)
 ```
 
 A third, subtler one surfaced later:
@@ -218,12 +221,24 @@ A third, subtler one surfaced later:
       before a blocker is accepted: re-audit weak negatives + privilege map +
       per-surface effort -> ACCEPT, or name a concrete REOPEN -> relaunch (bounded).
 
-  FM1 = over-grind | FM2 = premature surrender | FM3 = confirmation grinding
+  [ EPISTEMIC AUDITOR ] auditor.sh + AUDITOR.md  -- out-of-band, opus, ~420s      (FM2')
+      reads the RAW logs; for every refuted/frozen vector asks "did the mechanism
+      ACTUALLY answer, or was it abandoned on an INCONCLUSIVE result (FAULT/timeout/
+      transport/tooling -- a test that never ran)?" On a mismatch -> auditor.md, and
+      the HOOK pushes the solver to read it (warn -> exit-2 block, self-clearing on read).
+
+  FM1 = over-grind | FM2 = premature surrender | FM2' = premature surrender on an
+  INCONCLUSIVE negative (mid-run, finer-grained than the clean-exit surrender gate) |
+  FM3 = confirmation grinding
 ```
 
-Why four layers, not one: they act at **different granularities and cadences** - per-call (hook),
-per-stall (watcher), per-review (oversee), per-surrender (gate) - and against **opposite** failures. A
-single mechanism cannot be both "stop drilling" and "don't give up".
+Why five layers, not one: they act at **different granularities and cadences** - per-call (hook),
+per-stall (watcher), per-review (oversee), per-surrender (gate), per-cycle evidence-audit (auditor) -
+and against **opposite** failures. A single mechanism cannot be both "stop drilling" and "don't give up".
+FM2 and FM2' are the same failure (premature surrender) at two depths: the surrender gate catches it only
+when the solver clean-exits; the auditor catches the *second-order* version the Nimbus fresh run showed -
+a vector correctly seen as LIVE, then refuted at high confidence on a test that never reached the
+mechanism - mid-run, before it hardens into a blocker.
 
 ### 4.3 The two-tier switch - who controls enforcement
 
@@ -278,12 +293,22 @@ the hunt, even if a lib is missing.
 
 ### 4.5 Negatives, replay, and the contradiction signal
 
-Three mechanisms tie the guard to the solver's reasoning:
+Four mechanisms tie the guard to the solver's reasoning:
 
 - **Negative provenance (A).** "X is closed/absent/mock" is a *claim*: it must carry *how deeply tested*
   + a confidence, and the load-bearing ones are mirrored into `ledger.negatives`. A shallow negative is
   a **hypothesis, not a fact** - and a re-open candidate. `rc2_negatives` is the one reader (structured
   list first, free-text grep fallback), used by both the surrender gate and the judge.
+- **Conclusiveness governs the freeze (G).** A negative is only as strong as the *verdict it rests on*: a
+  freeze is earned only when the mechanism itself answered (the privileged build ran and had no block
+  devices). A failure *on the way to* the mechanism (FAULT-before-BUILD, timeout, transport, tooling) is
+  **inconclusive** - it forces a materially-different retry, not a switch, and effort (budget counters)
+  must never be read as license to abandon a live vector that only ever returned inconclusive results. A
+  vector inconclusive across `RC2_UNTESTABLE_MAX` materially-different attempts is parked `untestable`
+  (ledger negative `kind:"untestable"` + the missing capability; freeze `resumable:true`), not refuted.
+  The **epistemic auditor** (section 4.2) is the out-of-band enforcer; the solver side is doctrine `10`/`40`.
+  Paired with **reason-from-the-artifact (E/G)**: on a bespoke fork the delta from stock is the surface, so
+  affordances come from what the target reveals (its own cached image, env, error text) over the catalog.
 - **Confirmed-path replay (re-walk, not script).** `confirmed_path` records each proven step's `how` +
   `yields`. On resume the solver **re-walks** the chain with its own tools, adapting to the respawned
   instance (fresh creds/IDs/flags) - it does **not** run a frozen `.sh`. This is the generalize-not-
@@ -310,6 +335,9 @@ Three mechanisms tie the guard to the solver's reasoning:
 | `GUARD_JUDGE_MODEL` | `sonnet` | sameness judge model (`haiku` cheaper/coarser) |
 | `GUARD_WATCH_INTERVAL` | `180` | watcher cadence (s) |
 | `RC2_SURRENDER_MAX` / `RC2_SURRENDER_MODEL` | `2` / `opus` | surrender-gate re-open budget / model |
+| `AUDITOR_INTERVAL` / `AUDITOR_MODEL` | `420` / `opus` | epistemic-auditor cadence / model (`NO_AUDITOR=1` disables) |
+| `AUDITOR_NUDGE_ESCALATE` | `3` | hook push warns N× for a new `auditor.md` finding, then exit-2 blocks until read |
+| `RC2_UNTESTABLE_MAX` | `4` | materially-different inconclusive attempts on one vector before it is parked `untestable` (not refuted) |
 
 All calibration defaults live in **one place** - `lib/env.sh`. `RC2_GUARD`/`RC2_GATE`/`RC2_GUARD_WATCH`
 are read at point of use (operator intent, not defaults).
@@ -330,6 +358,7 @@ are read at point of use (operator intent, not defaults).
   |- target_health.md   auto UP/DOWN/MOVED box signal (rc2_health_watcher) - read-only to the agent
   |- writeup.md         live "Confirmed path" block (above WRITEUP markers) + metrics on exit
   |- supervisor.md      reviewer verdicts (oversee / surrender gate / contradiction) - tick-gated
+  |- auditor.md         epistemic-auditor findings (inconclusive-as-refuted) - AUDITOR_TICK-gated, hook-pushed
   |- target.env         sourceable facts (target_ip, machine_id, tmux_base, ...) - rewritten on IP move
   |- recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/   raw evidence
   |- cache/             run-local scratch ONLY (not Claude's config/cache)
@@ -388,16 +417,16 @@ Convention worth preserving: **signals the hook must read fast and without `jq` 
     htb.sh                 token/HAR, resolve/spawn, VPN, rc2_htb_owned_init, rc2_flag_watcher/scan
     run.sh                 scaffold, prompts, rc2_run_loop (+ surrender gate), status writer,
                            rc2_claude_oneshot, rc2_negatives, sameness judge + watcher +
-                           contradiction signal + commit_freeze, oversee launch
-    hook_log.sh            per-call hook: force-log + anti-DoS + P1 accounting/guard (sources guard_lib)
-  scripts/                 watch  oversee  guard  report  analyze_run  rag  machine  burp  ...
+                           contradiction signal + commit_freeze, oversee + auditor launch
+    hook_log.sh            per-call hook: force-log + anti-DoS + P1 accounting/guard + auditor push (sources guard_lib)
+  scripts/                 watch  oversee  auditor  guard  report  analyze_run  rag  machine  burp  ...
   doctrine/00..60          the brain (system prompt)
   .claude/agents/          researcher  recon-analyst  exploit-dev  verifier  reverser
-  OVERSEER.md JUDGE.md SURRENDER.md   out-of-band reviewer prompts (NOT in the solver's prompt)
+  OVERSEER.md JUDGE.md SURRENDER.md AUDITOR.md   out-of-band reviewer prompts (NOT in the solver's prompt)
 ```
 
-Out-of-band model calls (`oversee`, sameness judge, surrender gate) all run **outside the repo cwd** via
-`rc2_claude_oneshot`, so no repo-local hook / auto-PR Stop hook fires on them.
+Out-of-band model calls (`oversee`, `auditor`, sameness judge, surrender gate) all run **outside the repo
+cwd** via `rc2_claude_oneshot` or their own loop script, so no repo-local hook / auto-PR Stop hook fires on them.
 
 ---
 
@@ -424,7 +453,9 @@ Out-of-band model calls (`oversee`, sameness judge, surrender gate) all run **ou
 - **auto-PR.** Every file-changing interactive turn auto-branches -> PR -> merges to `main` (a personal
   Stop hook). Expect your edits on `main` after the turn; keep them coherent.
 - **The guard is off by default.** `./hunt X` changes nothing; enforcement needs `RC2_GUARD=warn|block`
-  or `RC2_GATE=1`. Watcher/oversee/surrender run only when a layer is enabled.
+  or `RC2_GATE=1`. The sameness watcher / surrender gate / oversee *gate* run only when a guard layer is
+  enabled — but **oversee and the epistemic auditor themselves run by default** (they only advise; disable
+  with `NO_OVERSEE=1` / `NO_AUDITOR=1`). The auditor's hook push is likewise always live once `auditor.md` exists.
 - **Timezones in the journal can drift** (box-time vs UTC); prefer `rc2_utc` and the hook's UTC stamps.
 
 ---

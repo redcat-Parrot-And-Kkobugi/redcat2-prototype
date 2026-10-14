@@ -38,7 +38,10 @@ pipeline is bundled and automatic.
 **The supervisor runs alongside by default.** `./hunt` starts `oversee.sh` so the critic watches
 and writes `supervisor.md` without a second terminal — in a **herdr sibling pane** when you run
 `./hunt` inside herdr, otherwise a `<tmux_base>_oversee` tmux session. `NO_OVERSEE=1 ./hunt …`
-disables it; `OVERSEE_INTERVAL=300` tunes the cadence.
+disables it; `OVERSEE_INTERVAL=300` tunes the cadence. A second sibling, `auditor.sh`, runs the
+same way (an `<tmux_base>_auditor` session / herdr pane) and audits **evidence quality** rather than
+strategy — it catches a vector abandoned on an inconclusive result and pushes the solver to re-open
+it. `NO_AUDITOR=1` disables it; `AUDITOR_INTERVAL=300` tunes the cadence.
 
 Re-run the same target to **resume** — state lives on disk, not in the transcript. Add
 `--fresh` to archive the old run and start clean. A crash or context overflow mid-hunt
@@ -126,6 +129,7 @@ redcat2/
   scripts/
     watch.sh                 live run viewer (reasoning + every tool call/result)
     oversee.sh               supervisor/critic loop -> writes supervisor.md (2nd terminal)
+    auditor.sh               epistemic/conclusiveness auditor loop -> auditor.md (auto; pushes via the hook)
     report.sh                writeup.md: narrative (banner+chain+facts) + metrics   (auto on exit)
     analyze_run.sh           failure classifier -> failure_analysis.md/.json  (auto on exit)
     rag.sh                   cross-run memory: grep your own past runs (+ reference/)
@@ -155,6 +159,7 @@ runs/<slug>/
   flags.txt                  user=<hex> / root=<hex>  (auto-submitted)
   writeup.md                 narrative + metrics (report.sh)   failure_analysis.md/.json (analyze_run.sh)
   supervisor.md              reviewer verdicts, if oversee.sh is running (solver follows it)
+  auditor.md                 conclusiveness-audit findings, if auditor.sh is running (hook pushes the solver to read it)
   status.md                  auto snapshot of the current situation, refreshed every ~10 min
   target_health.md           auto UP/DOWN/MOVED box signal (read on mass connection failures)
   recon/ enum/ loot/ exploit/ reversing/ research/ tools/ bin/ notes/ cache/   raw evidence (+ run-local scratch)
@@ -205,6 +210,12 @@ are installed separately by you; `~/.local/bin/{ida,idat}` wrappers point at the
   writes `supervisor.md` with a STATUS / STOP / DO-NEXT verdict. The solver reads that file and
   course-corrects (doctrine `10-hunt-loop.md`). It's the long-horizon complement to the in-loop
   `verifier`, catching rabbit holes the solver can't see from inside. It never touches the target.
+- **Epistemic auditor** (`scripts/auditor.sh`, auto-started alongside oversee) — a second,
+  orthogonal opus reviewer that audits **evidence quality**, not strategy: reading the raw logs, it
+  asks of every vector the solver treats as dead whether the mechanism *actually answered* or was
+  abandoned on an **inconclusive** result (a test that FAULTed / timed out / was blocked and never
+  ran). On a mismatch it writes `auditor.md` and the hook **pushes** the solver to read it (warn →
+  hard block if ignored). It is the mid-run, finer-grained counterpart to the surrender gate below.
 - **The guard** (**opt-in — off by default**) — mechanical enforcement of the evidence-budget doctrine,
   covering **both** ways a hard box is lost. *Against over-grinding:* a per-call **hook** (repeat / stall
   / ceiling / frozen → warn or block, one-shot override), an out-of-band **sameness judge** (sonnet/haiku
