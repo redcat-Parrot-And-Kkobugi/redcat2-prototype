@@ -47,6 +47,15 @@ offensive technique (a curated ref may be the fastest correct answer) or when th
 don't cover the bug. All three tiers are legitimate *technology* research — the only thing off-limits
 is the target box's own public solution (see `00-prime-directive.md` → No spoilers).
 
+**Research the fork, not just the stock product.** When the target is a *named fork, modified build,
+or custom service* (a distinct name, env prefix, banner, or version string), the generic product's
+docs describe the stock behavior — and the box's intended path usually lives in the **delta** from
+stock, exactly what those docs don't cover (`10` → ORIENT, *reason from the artifact*). So research
+the specific thing you're facing: its own name/version, its changelog or diff against upstream, which
+of its features are enabled vs. disabled, what its *own* error strings say. A refusal message like
+"feature X is disabled, set FLAG_Y to enable" or a custom image/namespace is primary-source evidence
+about this build — weigh it above "the upstream project normally does Z."
+
 ## Google dorking — operators
 
 Dorking is precision search: constrain the result set with operators so you find the

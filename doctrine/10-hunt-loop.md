@@ -74,6 +74,21 @@ pass and why**. Choose it by expected value, not by habit:
   privilege than you *nor* consume input you control** — "it looks like a mock/stub", "the easy
   escape didn't fire", or "I didn't see a bind-mount" is **not** closed (see `00` → evidence of
   absence, and `40` → how to record a negative).
+
+- **Reason from the artifact, not from the catalog — the target is ground truth, your prior is a
+  guess.** When you decide what is *available* here — which image is cached, which binary is on the
+  box, what a service accepts, which version is running, what a config permits — your evidence
+  ranks **what this target actually reveals** *above* "systems like this usually have X". They
+  conflict more often than you expect, and when they do, **the observation wins.** This matters most
+  when the thing in front of you is a **named fork, a modified product, or a custom build**: the
+  customization *is* the attack surface. The delta from the stock product is exactly where your
+  catalog knowledge goes stale **and** where the intended path usually lives — a custom name, env
+  prefix, or banner is a signal pointing *at* that delta, not background to skim past. So before you
+  reach for the standard playbook for a category, ask what **this** instance makes available: *what
+  must exist on this host because it is already running it? what does this fork's name / env / error
+  text tell me? what, already here, can I reuse?* The surest-cached image is the one the box itself
+  runs; the surest-present binary is the one already on a box you hold. Sweeping the generic list
+  (and concluding "none work") while never trying the target's own namesake is the classic miss.
 - **Reflex: enumerate a new context openly before judging it a dead end.** Whenever you land in a new
   execution context — a shell, a container, a service you can run code in, a new principal — spend one
   honest pass asking *what is actually here and what does it reach*: devices, caps, mounts, env, writable
@@ -196,6 +211,36 @@ built, one proven rung at a time. Re-score the board.
   **re-establish a new mechanism or re-examine the current one** (a different gadget, encoding,
   auth path, or assumption). That mechanism change — not one more reworded shot — is what moves
   a stuck line forward or thaws a frozen one.
+- **Conclusiveness — not effort — is what licenses a freeze.** Before you record a hypothesis
+  `refuted`/`frozen` or treat a vector as dead, apply one test: **did the thing you were testing
+  actually get to speak?** If the failure came from the *mechanism itself* — the privileged build
+  ran and exposed no block devices, the `mount` executed and the device was absent, the API ran and
+  returned *denied* — that is a **conclusive negative**: the refute/freeze is earned, confidence may
+  be high. But if the failure came *on the way to* the mechanism — a build that FAULTed before your
+  payload ran, a request that timed out, a transport that dropped, a tool that errored, an empty
+  result, a `[cyber]`-killed turn — the mechanism **never answered**: the result is **INCONCLUSIVE**,
+  and inconclusive evidence **cannot** license a freeze no matter how many attempts it cost. "The
+  moves I know failed" refutes *the moves*, not *the vector*. An inconclusive result demands a
+  **materially different attempt at the same vector** (fix what blocked the test; vary the one
+  controllable knob) — never a switch. This is precisely the seam between the two failure modes: the
+  budget counters exist to stop you **grinding one identical action**, and must **not** be read as a
+  cue to **abandon a live, high-value vector that has only ever returned inconclusive results.**
+- **`untestable` — the honest stop that keeps the rule above from becoming "never give up".** When
+  `RC2_UNTESTABLE_MAX` (default 4) **materially different** attempts at one vector have *all* come
+  back inconclusive — you have never once reached its verdict — that is itself a conclusion, but a
+  different one than refutation: the vector is **untestable with your current access/tooling**. Park
+  it (freeze with `resumable: true`) and record the negative as kind **`untestable`**, naming the
+  **one capability whose absence blocks the test** (`40` → negatives). That re-opens itself the
+  instant you gain that capability — the opposite of the wrong label "tested and dead", which prunes
+  the real path permanently. You still stop; you just stop with the correct terminal state.
+- **Before fleeing a high-impact vector, name the assumption that actually broke — not the next
+  vector to try.** When a ROOT-impact path "fails" and you feel the pull toward a more exotic one,
+  stop and separate *what the failure disproved* from *what you merely assumed*. A privileged-container
+  escape you only ever attempted via docker.sock has not disproven "privileged container → host"; it
+  has disproven "docker.sock is present here". The fix is almost always to vary your *own* wrong
+  assumption on the live vector (a different escape primitive, a different image, a different exec
+  path), not to escalate to a new, more complicated door. **A ROOT-impact vector is the last thing you
+  freeze, not the first thing you flee.**
 - **Zoom-out trigger:** whenever you freeze a hypothesis, or every ~10 actions, re-read
   `worldmodel.md` top to bottom and ask: *what surface or fact am I not using? what would
   someone who just arrived look at first?* The answer is often a seam you walked past while
@@ -237,6 +282,21 @@ then adopt its STOP / DO NEXT as **higher priority than your own momentum** — 
 redirects **override** your own "dead end" conclusions and your current plan. You never edit
 `supervisor.md`; the reviewer owns it. If no such file exists, you are not being supervised —
 proceed normally.
+
+**Epistemic auditor (`auditor.md`) — the conclusiveness check, and it is *pushed* to you.** A
+second independent reviewer may run alongside you, auditing one thing only: the **quality of your
+negative evidence**. It reads the raw logs and asks, for every vector you have treated as dead,
+the conclusiveness test above — *did the mechanism actually answer, or did you abandon it on an
+inconclusive result?* It is the complement to `supervisor.md`: that one judges **strategy** (are
+you on the right thing), this one judges **evidence** (is what you recorded as refuted truly
+refuted). Unlike the supervisor, it does not wait for you to check it — when it finds a
+misclassification it **pushes** you: the next tool call carries a notice to read `auditor.md`, and
+if you keep acting without reading it the push **hardens into a block**. So the moment you see that
+notice, **stop and read `auditor.md`**: check its first line `AUDITOR_TICK: N`, act only when `N`
+is newer than the tick you last applied (record the applied tick in `journal.md`), then re-open the
+flagged vector with the materially-different attempt it names — or **park it as `untestable`**,
+naming the missing capability — and do **not** leave it recorded as a flat refutation. You never
+edit `auditor.md`; the auditor owns it. No such file means you are not being audited — proceed.
 
 ## Phase as a side effect
 
