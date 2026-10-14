@@ -34,6 +34,18 @@ rc2_load_env() {
   : "${RC2_SURRENDER_MODEL:=claude-opus-4-8}" # surrender-gate re-audit: an opus reviewer, capped at 4.8 (never 5.x)
   export RC2_CEIL RC2_WARN RC2_BUDGET_DEFAULT RC2_REPEAT_FREEZE RC2_STALL RC2_GATE_N RC2_GATE_MODE GUARD_WATCH_INTERVAL GUARD_JUDGE_MODEL RC2_SURRENDER_MAX RC2_SURRENDER_MODEL
 
+  # ── epistemic auditor (conclusiveness gate) — the "premature-surrender one layer deeper" defense ─
+  # A periodic, independent opus reader of the RAW logs that judges whether a REFUTED/frozen high-impact
+  # hypothesis actually reached the mechanism's verdict, or was abandoned on an INCONCLUSIVE result (a
+  # test that never ran: FAULT/timeout/tooling/transport). It writes auditor.md (+ AUDITOR_TICK); the
+  # hook PUSHES "read auditor.md" to the solver and escalates to a hard block if ignored. Separate from
+  # oversee (strategy/rabbit-hole): this audits EVIDENCE QUALITY. See scripts/auditor.sh, AUDITOR.md.
+  : "${AUDITOR_INTERVAL:=420}"        # auditor cadence, seconds (7 min)
+  : "${AUDITOR_MODEL:=claude-opus-4-8}" # independent reviewer, capped at 4.8 (semantic "did the mechanism speak?" call)
+  : "${AUDITOR_NUDGE_ESCALATE:=3}"    # hook push: warn this many times, then block (exit 2) until the solver reads auditor.md
+  : "${RC2_UNTESTABLE_MAX:=4}"        # materially-different INCONCLUSIVE attempts on one vector before it is PARKED (untestable), not refuted
+  export AUDITOR_INTERVAL AUDITOR_MODEL AUDITOR_NUDGE_ESCALATE RC2_UNTESTABLE_MAX
+
   # ── prompt-cache / relaunch efficiency ────────────────────────────────────────
   # The real lever for "don't re-pay the whole context on every relaunch" is SERVER-SIDE prompt caching —
   # there is NO local prompt cache (verified: code.claude.com/docs/en/prompt-caching). The doctrine system

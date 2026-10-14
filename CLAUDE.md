@@ -44,7 +44,8 @@ env, **refreshes the HTB token when stale** (`rc2_ensure_htb_token`: `rc2_import
 the newest `*.har` from `$HAR_SRC` — default the Windows DevTools folder — into `har/`, then
 the bundled extractor writes a verified token to `.env`), resolves/spawns the box via the HTB
 API, does a VPN pre-flight, scaffolds `runs/<slug>/`, starts `oversee.sh` alongside — a herdr
-sibling pane if run inside herdr, else a `<tmux_base>_oversee` tmux session (unless `NO_OVERSEE=1`),
+sibling pane if run inside herdr, else a `<tmux_base>_oversee` tmux session (unless `NO_OVERSEE=1`) —
+and likewise `auditor.sh` (the epistemic auditor; unless `NO_AUDITOR=1`),
 builds the system prompt by
 concatenating `doctrine/*.md`, then launches `claude -p` with `--dangerously-skip-permissions`,
 `--output-format stream-json`, and the doctrine as `--append-system-prompt`. A per-run hook
@@ -157,7 +158,8 @@ the zero-dependency default for everything else.
 - Temp/scratch for development goes in `tmp/`; per-run temp is `runs/<slug>/tmp` (`TMPDIR`).
 - **Helper scripts** (`scripts/`): `watch.sh` (live run viewer); `oversee.sh` (supervisor/
   critic → `supervisor.md`, auto-started by `hunt` — a herdr sibling pane inside herdr, else a
-  `<tmux_base>_oversee` tmux session);
+  `<tmux_base>_oversee` tmux session); `auditor.sh` (epistemic/conclusiveness auditor → `auditor.md`,
+  auto-started by `hunt` the same way as a `<tmux_base>_auditor` tmux session/herdr pane; `NO_AUDITOR=1`);
   `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
   `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
@@ -196,9 +198,19 @@ the zero-dependency default for everything else.
   live level). *Against premature surrender on a wrongly-pruned surface* (the Nimbus "CodeBuild=mock →
   give up"): the **surrender gate** (`rc2_surrender_gate` + `SURRENDER.md`, opus) re-audits weak negatives
   + the privilege map on a clean-exit blocker and REOPENs a shallow higher-privilege dismissal, relaunching
-  via a supervisor tick (bounded by `RC2_SURRENDER_MAX`). Doctrine side (what the gate enforces): the solver
-  **orients by the privilege delta** (a privilege map in `worldmodel.md`; `10`/`40`), records **negatives
-  with tested-depth + confidence** (`00`/`40`), and enumerates a new context openly before judging it dead.
+  via a supervisor tick (bounded by `RC2_SURRENDER_MAX`); and — finer-grained, mid-run, not only at
+  clean-exit — the **epistemic auditor** (`scripts/auditor.sh` + `AUDITOR.md`, opus, every `AUDITOR_INTERVAL`=420s),
+  an independent reader of the RAW logs that catches the *second-order* surrender the Nimbus run showed — a
+  vector correctly seen as LIVE but then refuted on **inconclusive** evidence (a test that FAULTed/timed-out/
+  was-blocked and never reached the mechanism). It writes `auditor.md`; the hook **pushes** the solver to read
+  it (warn → `exit 2` block after `AUDITOR_NUDGE_ESCALATE`=3 un-acked calls, self-clearing on a read of the file).
+  Doctrine side (what the gates enforce): the solver
+  **orients by the privilege delta** (a privilege map in `worldmodel.md`; `10`/`40`), **reasons from the
+  artifact not the catalog** (`10`/`20` — a bespoke fork's delta is the surface), lets **conclusiveness (not
+  effort) govern a freeze** — an inconclusive result forces a materially-different retry, and a vector
+  inconclusive across `RC2_UNTESTABLE_MAX`=4 attempts is PARKED `untestable` (naming the missing capability),
+  not refuted (`10`/`40`) — records **negatives with tested-depth + confidence** (`00`/`40`), and enumerates a
+  new context openly before judging it dead.
   Enforcement is a **two-tier switch**: operator floor (`RC2_GUARD` env) ⊔ live (`logs/guard.mode`,
   secret-tagged via `logs/.guard_secret`), `effective=max`. Helpers in `lib/guard_lib.sh`, defaults in
   `lib/env.sh`, reference in GUIDE §4a.
@@ -206,7 +218,13 @@ the zero-dependency default for everything else.
   solver follows a newer `SUPERVISOR_TICK` (doctrine `10-hunt-loop.md`). Its system prompt is
   `OVERSEER.md` (kept out of `doctrine/` so it never enters the solver's own prompt). With the guard
   enabled it also drives the **weighted gate** — only `RC2_GATE_N` consecutive same-`FOCUS`
-  rabbit-hole verdicts raise the live guard level (via `guard.sh`, re-asserted each tick).
+  rabbit-hole verdicts raise the live guard level (via `guard.sh`, re-asserted each tick). A **second,
+  orthogonal** sibling runs the same way — `auditor.sh` (prompt `AUDITOR.md`, also kept out of `doctrine/`),
+  launched by `hunt` alongside oversee (`rc2_launch_auditor`/`rc2_stop_auditor`, herdr sibling pane inside
+  herdr else `<tmux_base>_auditor` tmux; `NO_AUDITOR=1` disables). oversee judges **strategy** (rabbit-hole/
+  priority, pull via `SUPERVISOR_TICK`); the auditor judges **evidence quality** (conclusiveness, push via
+  `AUDITOR_TICK` + the hook). They are deliberately separate channels so "re-prioritize" never blurs with
+  "your evidence is inconclusive".
 - **Reversing** is export-first (`doctrine/60-reversing.md`): IDA → files under `reversing/`,
   grep locally, query IDA MCP only surgically; gdb runs in a `<tmux_base>_dbg` tmux session,
   launched with a plugin via the on-PATH wrappers `gdb-pwndbg` (default) / `gdb-gef` / `gdb-peda`

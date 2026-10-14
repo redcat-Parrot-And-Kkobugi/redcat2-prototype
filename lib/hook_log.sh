@@ -145,6 +145,36 @@ rc2_guard_pre() {
   return 0
 }
 
+# rc2_auditor_push — PUSH channel for the epistemic auditor (scripts/auditor.sh). When auditor.md
+# carries a finding (AUDITOR_TICK) the solver has not yet read, nudge it to read it on the very next
+# tool call; escalate from warn (stderr, return 0 — same convention as the guard warn) to a hard block
+# (return 2) after AUDITOR_NUDGE_ESCALATE un-acked calls. A Read of auditor.md ACKs the current tick and
+# clears the push (self-healing: the auditor re-bumps the tick next cycle if the finding still stands).
+# This is the only difference from the supervisor channel, which is pull-only (solver reads it each loop).
+rc2_auditor_push() {
+  local aud="$cwd/auditor.md" nf="$logdir/.auditor_nudge" esc="${AUDITOR_NUDGE_ESCALATE:-3}"
+  [ -f "$aud" ] || return 0
+  local atick; atick="$(grep -oE '^AUDITOR_TICK: [0-9]+' "$aud" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+  [ -n "$atick" ] || return 0
+  local tn fp2
+  tn="$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
+  fp2="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null)"
+  # the solver reading auditor.md right now = acknowledgement -> record the tick, stop pushing it
+  if [ "$tn" = "Read" ] && printf '%s' "$fp2" | grep -q 'auditor\.md$'; then
+    echo "$atick ACK" > "$nf" 2>/dev/null; return 0
+  fi
+  local seen cnt; read -r seen cnt < "$nf" 2>/dev/null; seen="${seen:-0}"; cnt="${cnt:-0}"
+  [ "$seen" = "$atick" ] && [ "$cnt" = "ACK" ] && return 0   # already acked this tick
+  if [ "$seen" != "$atick" ]; then cnt=1; else cnt=$((cnt+1)); fi
+  echo "$atick $cnt" > "$nf" 2>/dev/null
+  if [ "$cnt" -ge "$esc" ] 2>/dev/null; then
+    echo "redcat2 auditor [BLOCK]: an independent evidence-quality audit (auditor.md, AUDITOR_TICK $atick) flags a negative you are leaning on as resting on INCONCLUSIVE evidence — a test that never reached the mechanism (FAULT/timeout/transport/tooling), scored as if the mechanism answered. You have taken $cnt actions without reading it. STOP: Read auditor.md in full, then re-open the flagged vector with a materially-different attempt, or PARK it as untestable (naming the missing capability) — do NOT leave it recorded as a flat refutation. Reading auditor.md clears this block." >&2
+    return 2
+  fi
+  echo "redcat2 auditor (push $cnt/$esc): new finding in auditor.md (AUDITOR_TICK $atick) — a vector you are treating as dead may rest on INCONCLUSIVE evidence (a test that never ran). Read auditor.md before scoring it refuted; follow its DO NEXT (a materially-different attempt at the same vector, or PARK as untestable). doctrine 10 → conclusiveness, not effort, governs a freeze." >&2
+  return 0
+}
+
 if [ "$phase" = "pre" ]; then
   printf '%s' "$input" | jq -c --arg ts "$ts" \
       '{ts:$ts, event:"pre", tool:(.tool_name // "?"),
@@ -175,6 +205,9 @@ if [ "$phase" = "pre" ]; then
       exit 2
     fi
   fi
+
+  # PUSH: epistemic auditor finding (auditor.md) — warn, then hard-block if ignored. Fail-open.
+  rc2_auditor_push; apc=$?; [ "${apc:-0}" -eq 2 ] && exit 2
 
   # P1: rabbit-hole accounting (always) + guard (opt-in). Fail-open; only a block returns 2.
   rc2_guard_pre; grc=$?; [ "${grc:-0}" -eq 2 ] && exit 2

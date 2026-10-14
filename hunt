@@ -54,6 +54,10 @@ rc2_rotate_journal "$RUNDIR"          # roll old journal entries to archive BEFO
 # health) would see the stale flag at its first check and exit at t=0 — silently disabling live flag
 # submission, the rabbit-hole guard, and the health signal. Clear it so .stop means THIS run.
 rm -f "$RUNDIR/logs/.stop"
+# stale auditor push-state from a prior run would make the hook re-nudge (or block) on a tick the solver
+# already handled — clear it so the push reflects THIS run's auditor only. auditor.md itself is living
+# memory (kept); only the hook's per-run ack/nudge counter is reset.
+rm -f "$RUNDIR/logs/.auditor_nudge"
 # accounting.json is seeded only once (resume preserves it), so the operator's launch-env RC2_CEIL/RC2_WARN
 # would be ignored on a re-launch — the hook reads .global.ceiling/.warn_at from the file, not the env.
 # Re-apply them each launch so an operator override takes effect on resume too.
@@ -109,6 +113,10 @@ fi
 # supervisor/critic alongside the hunt: a herdr sibling pane when running inside herdr, else a
 # tmux session (default). It reads the logs + living files and writes supervisor.md on drift.
 rc2_launch_oversee "$RUNDIR"
+# epistemic auditor alongside the hunt (same placement policy as oversee): a periodic independent opus
+# reader of the raw logs that catches a vector abandoned on INCONCLUSIVE evidence and pushes the solver
+# (via the hook) to re-open it. Complements oversee (strategy) by auditing evidence quality. NO_AUDITOR=1 skips.
+rc2_launch_auditor "$RUNDIR"
 
 cleanup() {
   [ -n "${_CLEANED:-}" ] && return 0; _CLEANED=1
@@ -121,6 +129,7 @@ cleanup() {
   [ -n "${GUARD_WATCH_PID:-}" ] && kill "$GUARD_WATCH_PID" 2>/dev/null || true
   rc2_write_status "$RUNDIR" 2>/dev/null || true                   # final snapshot
   rc2_stop_oversee                                                 # stop supervisor (herdr pane or tmux)
+  rc2_stop_auditor                                                 # stop epistemic auditor (herdr pane or tmux)
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true

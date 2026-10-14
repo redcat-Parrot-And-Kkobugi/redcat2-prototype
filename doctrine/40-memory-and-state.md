@@ -106,7 +106,8 @@ Shape (create it if missing — `H<n>` keys mirror the board exactly):
       "yields": "shell as worker in tmux <tmux_base>_main (verify: id -> uid=1000)", "at": "<utc>" }
   ],
   "negatives": [
-    { "fact": "no docker.sock in any reachable container", "confidence": "high", "tested": "find / + probe :2375 on host/floci, 3 contexts" }
+    { "fact": "no docker.sock in any reachable container", "confidence": "high", "tested": "find / + probe :2375 on host/floci, 3 contexts" },
+    { "fact": "codebuild privileged escape", "confidence": "low", "tested": "4 attempts all FAULTed before BUILD (inconclusive — payload never ran)", "kind": "untestable", "missing": "a build image cached on the host that actually starts" }
   ],
   "override": null
 }
@@ -140,6 +141,15 @@ absence). The harness reads this list: the surrender gate re-opens the weakest o
 blocker, and the sameness judge flags when your recent actions **presuppose** one (you chasing a want
 your own evidence refutes). A `low`/`med`-confidence negative here is explicitly a re-open candidate, so
 be honest about `tested` — a one-glance dismissal recorded as `high` is how the real path gets pruned.
+**A negative is only as strong as the verdict it rests on (`10` → conclusiveness governs a freeze).** If
+the evidence for it is *inconclusive* — the test FAULTed/timed-out/was-blocked and the mechanism never
+actually answered — it is **not** a `high`-confidence refutation; record it `low`/`med`. And when a
+vector has returned only inconclusive results across `RC2_UNTESTABLE_MAX` (default 4) materially-different
+attempts, record it with **`kind: "untestable"`** and a **`missing`** field naming the one capability
+whose absence blocks the test — that is a *parked* negative (the matching ledger freeze is `resumable:
+true`), re-opened automatically if you later gain that capability, never a flat refutation. The epistemic
+auditor (`10` → `auditor.md`) reads these: a vector it finds mis-scored as `refuted` on inconclusive
+evidence gets pushed back to you for a materially-different attempt or an honest `untestable` park.
 
 ## Raw artifacts (not memory — evidence)
 

@@ -661,3 +661,33 @@ rc2_stop_oversee() {
   if [ -n "${HERDR_OVERSEE_PANE:-}" ]; then herdr pane close "$HERDR_OVERSEE_PANE" 2>/dev/null || true
   else tmux kill-session -t "${tmux_base}_oversee" 2>/dev/null || true; fi
 }
+
+# ── side process: epistemic auditor (conclusiveness gate), same placement policy as oversee ──
+# A periodic independent opus reader of the RAW logs (scripts/auditor.sh) that catches a negative
+# abandoned on INCONCLUSIVE evidence and pushes the solver (via the hook) to re-open it. Separate from
+# oversee: oversee judges strategy, this judges evidence quality. NO_AUDITOR=1 skips it. Sets
+# HERDR_AUDITOR_PANE (herdr) for cleanup; else tmux session <tmux_base>_auditor. Needs $RC2_ROOT, $tmux_base.
+rc2_launch_auditor() {
+  local rundir="$1" slug; slug="$(basename "$rundir")"
+  HERDR_AUDITOR_PANE=""
+  [ "${NO_AUDITOR:-0}" = "1" ] && { echo "[auditor] disabled (NO_AUDITOR=1)"; return 0; }
+  local acmd="AUDITOR_INTERVAL='${AUDITOR_INTERVAL:-420}' AUDITOR_MODEL='${AUDITOR_MODEL:-claude-opus-4-8}' scripts/auditor.sh '$slug'"
+  if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
+    local p; p="$(herdr pane split --current --direction down --cwd "$RC2_ROOT" --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
+    if [ -n "$p" ]; then
+      herdr pane run "$p" "$acmd" >/dev/null 2>&1
+      HERDR_AUDITOR_PANE="$p"
+      echo "[auditor] herdr pane $p (down split; herdr pane read $p to view)"
+      return 0
+    fi
+    echo "[auditor] herdr pane split failed — falling back to tmux"
+  fi
+  tmux new-session -d -s "${tmux_base}_auditor" "cd '$RC2_ROOT' && $acmd" 2>/dev/null \
+    && echo "[auditor] tmux '${tmux_base}_auditor' (attach to watch; NO_AUDITOR=1 to disable)" || true
+}
+
+# Stop whatever rc2_launch_auditor started (herdr pane or tmux session).
+rc2_stop_auditor() {
+  if [ -n "${HERDR_AUDITOR_PANE:-}" ]; then herdr pane close "$HERDR_AUDITOR_PANE" 2>/dev/null || true
+  else tmux kill-session -t "${tmux_base}_auditor" 2>/dev/null || true; fi
+}
