@@ -128,6 +128,7 @@ redcat2/
     hook_log.sh              force-log every tool call + result; anti-DoS repeat guard
   scripts/
     watch.sh                 live run viewer (reasoning + every tool call/result)
+    agents.sh                merged feed of ONLY the non-solver agents' responses (oversee+auditor+sub-agents); read-only
     oversee.sh               supervisor/critic loop -> writes supervisor.md (2nd terminal)
     auditor.sh               epistemic/conclusiveness auditor loop -> auditor.md (auto; pushes via the hook)
     report.sh                writeup.md: narrative (banner+chain+facts) + metrics   (auto on exit)
