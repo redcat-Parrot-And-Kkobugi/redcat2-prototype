@@ -99,12 +99,18 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `MAX_RESTARTS` | 20 | auto-relaunch budget on crash/overflow |
 | `NO_RESTART` | 0 | `1` = run the agent once, no auto-relaunch |
 | `NO_OVERSEE` | 0 | `1` = don't start the supervisor |
+| `NO_AUDITOR` | 0 | `1` = don't start the epistemic auditor (conclusiveness gate; see [§4a](#4a-the-guard--anti-rabbit-hole-enforcement)) |
 | `NO_STOP` | 0 | `1` = on solve, don't terminate the HTB machine (keep the box up) |
 | `VPN_AUTOFIX` | 0 | `1` = if pre-flight finds the wrong VPN server (HTB_OVPN mismatch, or target routes but is host-unreachable), auto-reconnect to `HTB_OVPN` |
 | `CYBER_MAX_RETRIES` | 10 | relaunches allowed when the agent is cyber-safeguard-flagged before the loop stops (content flags re-trip, so this caps churn) |
 | `CYBER_FALLBACK_MODEL` | — | on a cyber-safeguard flag, switch the orchestrator to this (less-restricted) model for the next session |
 | `OVERSEE_FALLBACK_MODEL` | — | model the supervisor retries a cyber-flagged review with (one retry); `scripts/oversee.sh` only |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
+| `AUDITOR_INTERVAL` | 420 | epistemic auditor review cadence (s) |
+| `AUDITOR_MODEL` | `claude-opus-4-8` | model for the auditor's conclusiveness call (opus, capped at 4.8) |
+| `AUDITOR_FALLBACK_MODEL` | — | model the auditor retries a cyber-flagged review with (one retry); `scripts/auditor.sh` only |
+| `AUDITOR_NUDGE_ESCALATE` | 3 | hook pushes (warn) this many times for a new `auditor.md` finding, then hard-blocks (exit 2) until the solver reads it |
+| `RC2_UNTESTABLE_MAX` | 4 | materially-different inconclusive attempts on one vector before it is parked `untestable` (not refuted) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
 | `IP_WAIT_TRIES` | 15 | spawn/IP poll attempts |
@@ -169,7 +175,8 @@ load `.env` (incl. guard defaults) → refresh HTB token from newest HAR if stal
 (wait up to 15×3 min) → VPN pre-flight (`openvpn --daemon` if `HTB_OVPN` set) → scaffold `runs/<slug>/`
 (seed the 3 living files + `ledger.json` + `logs/accounting.json` + the guard secret) → read HTB
 owned-flag status (sets live/defer flag-submit mode) → start the flag auto-submitter, the `status.md`
-writer, the supervisor (herdr pane or tmux), and — when any guard layer is enabled — the sameness-judge
+writer, the supervisor + the epistemic auditor (each a herdr pane or tmux session), and — when any guard
+layer is enabled — the sameness-judge
 watcher → build the system prompt from `doctrine/*.md` → run `claude -p` in the resilient loop → on exit
 write `writeup.md` + `failure_analysis.*` and a final `status.md`. **On a solve** (both flags) it also
 **terminates the HTB machine** (unless `NO_STOP=1`) and tears down the run's tmux sessions;
@@ -243,13 +250,29 @@ opt-in and off by default, sharing state and bounded below by the operator.
   the per-surface tally and either ACCEPTs the surrender or names a concrete **REOPEN** (component +
   elevation primitive), which relaunches the solver via a supervisor tick. Bounded by `RC2_SURRENDER_MAX`.
   This is what catches the Nimbus "CodeBuild=mock → give up". [failure mode 2]
+- **Epistemic auditor** (`scripts/auditor.sh` + `AUDITOR.md`, opus, out-of-band, every `AUDITOR_INTERVAL`=420s)
+  — the **mid-run, finer-grained** counterpart to the surrender gate (which only fires at clean-exit). It
+  reads the raw logs and judges one thing: is a negative the solver leans on **conclusive** (the mechanism
+  ran and answered) or **inconclusive** (the test FAULTed / timed out / was blocked and never reached the
+  mechanism)? The Nimbus run is the exact case it exists for: CodeBuild was correctly seen as LIVE, then
+  refuted at high confidence on FAULT-before-BUILD results — a test that never ran. On a mismatch it writes
+  `auditor.md`; the **hook pushes** the solver to read it (warn `AUDITOR_NUDGE_ESCALATE`× then exit-2 block,
+  self-clearing on a read). A vector that returns only inconclusive results across `RC2_UNTESTABLE_MAX`=4
+  materially-different attempts is parked **`untestable`** (naming the missing capability), not refuted.
+  Separate channel (`AUDITOR_TICK`) from oversee's `SUPERVISOR_TICK` so "re-prioritize" never blurs with
+  "your evidence is inconclusive". [failure mode 2, mid-run]
 
 **Orientation & evidence discipline (the doctrine side the guard enforces)** — the solver is told to
 **orient by the privilege delta**: keep a *privilege map* in `worldmodel.md` (who/what runs above you,
 and does your input reach it) and hunt elevation across *all* domains, not just the one you're in; to
 record a **negative** only with how-deeply-tested + confidence (a shallow "it's a mock" is a hypothesis,
 not a fact); and, on entering any new execution context, to **enumerate it openly** (devices, caps,
-mounts, privilege) before judging it dead. The surrender gate is the hard backstop when these slip.
+mounts, privilege) before judging it dead. It is also told to let **conclusiveness, not effort, govern a
+freeze** — an inconclusive result (a test that never reached the mechanism) forces a materially-different
+retry, and a vector inconclusive across `RC2_UNTESTABLE_MAX` attempts is parked `untestable`, not refuted —
+and to **reason from the artifact, not the catalog**: on a bespoke fork the delta from the stock product is
+the surface (the surest-cached image is the one the box already runs). The surrender gate and the epistemic
+auditor are the hard backstops when these slip.
 
 **Two-tier switch (who controls enforcement)**
 - **floor** = `RC2_GUARD` (operator env, set at launch) — the minimum that is always in effect; neither
@@ -330,6 +353,7 @@ target_health.md   auto UP/DOWN/MOVED box signal (rc2_health_watcher); read it o
 writeup.md   live "Confirmed path" block (updated as steps confirm) + metrics (report.sh, on exit)
 failure_analysis.md/.json   why the run went as it did (analyze_run.sh, on exit)
 supervisor.md   reviewer verdicts, when oversee is running
+auditor.md      conclusiveness-audit findings, when auditor is running (hook pushes the solver to read it)
 logs/        conv.jsonl (full conversation), tools.jsonl + raw/ (every tool call),
              accounting.json (guard counters — harness-owned; §4a), guard.log (guard actions),
              guard.mode + .guard_secret (live-mode channel), .flag_mode (live|defer),
@@ -354,6 +378,7 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `hunt` | `./hunt [--fresh] <name|ip> [model] [notes]` | the launcher (§3) |
 | `scripts/watch.sh` | `scripts/watch.sh [name]` | live feed: agent reasoning + every tool call/result. `FULL=1` whole outputs, `NOCONV=1` tool-feed only, `MAX=<n>` lines |
 | `scripts/oversee.sh` | `scripts/oversee.sh <slug> ["directive"]` | supervisor/critic loop → `supervisor.md` on drift. `OVERSEE_INTERVAL`, `OVERSEE_MODEL`, `ONESHOT=1`. Auto-started by `hunt` |
+| `scripts/auditor.sh` | `scripts/auditor.sh <slug>` | epistemic/conclusiveness auditor loop → `auditor.md` on a misclassified (inconclusive-as-refuted) negative; the hook pushes the solver to read it. `AUDITOR_INTERVAL`, `AUDITOR_MODEL`, `ONESHOT=1`. Auto-started by `hunt` |
 | `scripts/report.sh` | `scripts/report.sh <rundir>` | metrics → `writeup.md` (wall time, tool/Task counts, per-phase). Auto on exit |
 | `scripts/analyze_run.sh` | `scripts/analyze_run.sh [rundir|name]` | failure classifier → `failure_analysis.md/.json`. Auto on exit |
 | `scripts/rag.sh` | `scripts/rag.sh [-p] <query>` | cross-run memory: grep your own past runs. `-p` also searches `reference/` + PayloadsAllTheThings/GTFOBins. `SCOPE=runs/<slug>` to narrow |
