@@ -632,62 +632,50 @@ rc2_surrender_directive() {
   printf '%s surrender-gate REOPEN %s via %s: %s\n' "$(rc2_utc)" "$comp" "$prim" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
 }
 
-# ── side process: supervisor (oversee), placed per the runtime ───────────────
-# Inside herdr (HERDR_ENV=1) oversee runs in a sibling pane; otherwise a tmux session (default).
-# NO_OVERSEE=1 skips it. Sets HERDR_OVERSEE_PANE (herdr) so cleanup can close it; else the tmux
-# session is <tmux_base>_oversee. Needs $RC2_ROOT, $tmux_base.
+# ── side processes: reviewer sidecars (oversee + auditor), placed per the runtime ────────────
+# rc2_launch_sidecar <label> <split_dir> <disabled> <cmd> — start a reviewer sidecar beside the hunt:
+# a herdr sibling pane inside herdr (HERDR_ENV=1), else a <tmux_base>_<label> tmux session. Records the
+# pane id in global HERDR_<LABEL>_PANE (uppercased) so rc2_stop_sidecar can close it. <disabled>=1 (the
+# operator NO_<LABEL> toggle) skips it. Needs $RC2_ROOT, $tmux_base. Shared by oversee + auditor below.
+rc2_launch_sidecar() {
+  local label="$1" dir="$2" disabled="$3" cmd="$4" up; up="$(printf '%s' "$label" | tr 'a-z' 'A-Z')"
+  declare -g "HERDR_${up}_PANE="
+  [ "$disabled" = "1" ] && { echo "[$label] disabled (NO_${up}=1)"; return 0; }
+  if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
+    local p; p="$(herdr pane split --current --direction "$dir" --cwd "$RC2_ROOT" --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
+    if [ -n "$p" ]; then
+      herdr pane run "$p" "$cmd" >/dev/null 2>&1
+      declare -g "HERDR_${up}_PANE=$p"
+      echo "[$label] herdr pane $p ($dir split; herdr pane read $p to view)"
+      return 0
+    fi
+    echo "[$label] herdr pane split failed — falling back to tmux"
+  fi
+  tmux new-session -d -s "${tmux_base}_${label}" "cd '$RC2_ROOT' && $cmd" 2>/dev/null \
+    && echo "[$label] tmux '${tmux_base}_${label}' (attach to watch; NO_${up}=1 to disable)" || true
+}
+
+# rc2_stop_sidecar <label> — stop whatever rc2_launch_sidecar <label> started (herdr pane or tmux session).
+rc2_stop_sidecar() {
+  local label="$1" up; up="$(printf '%s' "$label" | tr 'a-z' 'A-Z')"
+  local var="HERDR_${up}_PANE" pane="${!var:-}"
+  if [ -n "$pane" ]; then herdr pane close "$pane" 2>/dev/null || true
+  else tmux kill-session -t "${tmux_base}_${label}" 2>/dev/null || true; fi
+}
+
+# supervisor (oversee) — strategy critic -> supervisor.md. Guard/gate env is passed explicitly because a
+# pre-existing tmux server would not inherit it. herdr: right split.
 rc2_launch_oversee() {
   local rundir="$1" slug; slug="$(basename "$rundir")"
-  HERDR_OVERSEE_PANE=""
-  [ "${NO_OVERSEE:-0}" = "1" ] && { echo "[oversee] disabled (NO_OVERSEE=1)"; return 0; }
-  # pass the guard/gate env explicitly: a pre-existing tmux server would not inherit it otherwise
   local ocmd="RC2_GATE='${RC2_GATE:-}' RC2_GUARD='${RC2_GUARD:-off}' RC2_GATE_N='${RC2_GATE_N:-}' RC2_GATE_MODE='${RC2_GATE_MODE:-}' OVERSEE_INTERVAL='${OVERSEE_INTERVAL:-600}' scripts/oversee.sh '$slug'"
-  if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
-    local p; p="$(herdr pane split --current --direction right --cwd "$RC2_ROOT" --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
-    if [ -n "$p" ]; then
-      herdr pane run "$p" "$ocmd" >/dev/null 2>&1
-      HERDR_OVERSEE_PANE="$p"
-      echo "[oversee] herdr pane $p (right split; herdr pane read $p to view)"
-      return 0
-    fi
-    echo "[oversee] herdr pane split failed — falling back to tmux"
-  fi
-  tmux new-session -d -s "${tmux_base}_oversee" "cd '$RC2_ROOT' && $ocmd" 2>/dev/null \
-    && echo "[oversee] tmux '${tmux_base}_oversee' (attach to watch; NO_OVERSEE=1 to disable)" || true
+  rc2_launch_sidecar oversee right "${NO_OVERSEE:-0}" "$ocmd"
 }
+rc2_stop_oversee() { rc2_stop_sidecar oversee; }
 
-# Stop whatever rc2_launch_oversee started (herdr pane or tmux session).
-rc2_stop_oversee() {
-  if [ -n "${HERDR_OVERSEE_PANE:-}" ]; then herdr pane close "$HERDR_OVERSEE_PANE" 2>/dev/null || true
-  else tmux kill-session -t "${tmux_base}_oversee" 2>/dev/null || true; fi
-}
-
-# ── side process: epistemic auditor (conclusiveness gate), same placement policy as oversee ──
-# A periodic independent opus reader of the RAW logs (scripts/auditor.sh) that catches a negative
-# abandoned on INCONCLUSIVE evidence and pushes the solver (via the hook) to re-open it. Separate from
-# oversee: oversee judges strategy, this judges evidence quality. NO_AUDITOR=1 skips it. Sets
-# HERDR_AUDITOR_PANE (herdr) for cleanup; else tmux session <tmux_base>_auditor. Needs $RC2_ROOT, $tmux_base.
+# epistemic auditor — evidence-quality reviewer -> auditor.md (hook pushes the solver). herdr: down split.
 rc2_launch_auditor() {
   local rundir="$1" slug; slug="$(basename "$rundir")"
-  HERDR_AUDITOR_PANE=""
-  [ "${NO_AUDITOR:-0}" = "1" ] && { echo "[auditor] disabled (NO_AUDITOR=1)"; return 0; }
   local acmd="AUDITOR_INTERVAL='${AUDITOR_INTERVAL:-420}' AUDITOR_MODEL='${AUDITOR_MODEL:-claude-opus-4-8}' scripts/auditor.sh '$slug'"
-  if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
-    local p; p="$(herdr pane split --current --direction down --cwd "$RC2_ROOT" --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
-    if [ -n "$p" ]; then
-      herdr pane run "$p" "$acmd" >/dev/null 2>&1
-      HERDR_AUDITOR_PANE="$p"
-      echo "[auditor] herdr pane $p (down split; herdr pane read $p to view)"
-      return 0
-    fi
-    echo "[auditor] herdr pane split failed — falling back to tmux"
-  fi
-  tmux new-session -d -s "${tmux_base}_auditor" "cd '$RC2_ROOT' && $acmd" 2>/dev/null \
-    && echo "[auditor] tmux '${tmux_base}_auditor' (attach to watch; NO_AUDITOR=1 to disable)" || true
+  rc2_launch_sidecar auditor down "${NO_AUDITOR:-0}" "$acmd"
 }
-
-# Stop whatever rc2_launch_auditor started (herdr pane or tmux session).
-rc2_stop_auditor() {
-  if [ -n "${HERDR_AUDITOR_PANE:-}" ]; then herdr pane close "$HERDR_AUDITOR_PANE" 2>/dev/null || true
-  else tmux kill-session -t "${tmux_base}_auditor" 2>/dev/null || true; fi
-}
+rc2_stop_auditor() { rc2_stop_sidecar auditor; }

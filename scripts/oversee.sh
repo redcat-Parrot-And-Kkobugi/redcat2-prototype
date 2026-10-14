@@ -16,30 +16,8 @@
 #    OVERSEE_MODEL=claude-opus-4-8 scripts/oversee.sh blizzard   # pin reviewer model (default: 4.8)
 # =============================================================================
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
-[ -f "$ROOT/.env" ] && { set -a; . "$ROOT/.env"; set +a; }
-unset ANTHROPIC_API_KEY
-: "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN in .env}"
-# relaunch/tick cache efficiency (this pane doesn't call rc2_load_env; mirror lib/env.sh's policy so the
-# supervisor reuses its byte-stable prefix across ticks). OAuth above makes 1h eligible.
-: "${CLAUDE_CODE_PROMPT_CACHE_TTL:=1h}"; : "${DISABLE_AUTOUPDATER:=1}"
-export CLAUDE_CODE_PROMPT_CACHE_TTL DISABLE_AUTOUPDATER
-
-usage(){ echo "usage: oversee.sh [-s|--slug <name>] [-m|--model <model>] [-d|--directive <text>] [-i|--interval <sec>] [--oneshot] [<slug> [directive]]" >&2; }
-_slug="" _model="" _directive="" _interval="" _oneshot=""; pos=()
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -s|--slug)      [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _slug="$2"; shift 2 ;;
-    -m|--model)     [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _model="$2"; shift 2 ;;
-    -d|--directive) [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _directive="$2"; shift 2 ;;
-    -i|--interval)  [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _interval="$2"; shift 2 ;;
-    --oneshot)      _oneshot=1; shift ;;
-    -h|--help)      usage; exit 0 ;;
-    --)             shift; while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
-    -*)             echo "unknown option: $1" >&2; usage; exit 2 ;;
-    *)              pos+=("$1"); shift ;;
-  esac
-done
+. "$(dirname "$0")/lib/reviewer_loop.sh"   # shared scaffolding: env/cache policy, arg-parse, claude call, main loop
+rc2_reviewer_parse_args "$@"
 # positional back-compat (hunt calls `oversee.sh '<slug>'`): pos[0]=slug, pos[1]=directive, only if the flag was not given
 [ -z "$_slug" ] && [ "${#pos[@]}" -ge 1 ] && _slug="${pos[0]}"
 [ -z "$_directive" ] && [ "${#pos[@]}" -ge 2 ] && _directive="${pos[1]}"
@@ -114,18 +92,11 @@ build_digest(){
   fi
 }
 
-# _oversee_review <model> — run one reviewer pass ($1=model, digest on stdin), verdict (or error text) on stdout.
-_oversee_review(){
-  timeout 300 claude -p \
-      "This is a hunt digest to review. Per the OVERSEER instructions: first judge whether the trajectory is progressing from the logs + living files, then Read 2-4 relevant screenshots from '## recent images' (images render natively), Read raw logs if needed, synthesize, and output ONLY the verdict in the specified format. Read-only tools only (Read/Glob/Grep).
----
-$(cat)" \
-      --model "$1" --append-system-prompt "$(cat "$SYS")" \
-      --allowedTools "Read Glob Grep" 2>&1
-}
-# _oversee_failed <rc> <verdict-text> — 0(true) if the review call failed (non-zero or an error signature).
-_oversee_failed(){ [ "$1" -ne 0 ] && return 0; printf '%s' "$2" | grep -qiE 'API Error|safeguards flagged|\[cyber\]|Request ID|reviewer call failed'; }
-_oversee_cyber(){ printf '%s' "$1" | grep -qiE 'safeguards flagged|\[cyber\]|Cyber Verification'; }
+# oversee's reviewer lead-in; the call/err/cyber logic is shared (scripts/lib/reviewer_loop.sh).
+OVERSEE_LEADIN="This is a hunt digest to review. Per the OVERSEER instructions: first judge whether the trajectory is progressing from the logs + living files, then Read 2-4 relevant screenshots from '## recent images' (images render natively), Read raw logs if needed, synthesize, and output ONLY the verdict in the specified format. Read-only tools only (Read/Glob/Grep)."
+_oversee_review(){ rc2_reviewer_call "$1" "$SYS" "$OVERSEE_LEADIN"; }   # $1=model, digest on stdin
+_oversee_failed(){ rc2_reviewer_failed "$@"; }
+_oversee_cyber(){ rc2_reviewer_cyber "$@"; }
 
 # _oversee_gate <status> <verdict> — the P2 weighted gate. Tracks consecutive rabbit-hole verdicts
 # about the SAME FOCUS in accounting.json and, at GATE_N, raises the LIVE guard mode via guard.sh
@@ -220,14 +191,4 @@ echo "${d}   reviews on each new activity; writes $SUP ONLY on drift/rabbit-hole
 [ -n "$OP_NOTE" ] && echo "${y}   operator directive active:${n} $OP_NOTE ${d}(relayed to solver until followed)${n}"
 if [ "$GATE" = "1" ]; then echo "${y}   weighted gate ON:${n} ${GATE_N} consecutive same-focus rabbit-holes → live guard '${GATE_MODE}' (re-asserted; never below operator floor)"
 else echo "${d}   weighted gate off (advisory only; set RC2_GATE=1 or RC2_GUARD=warn|block to enable auto-escalation)${n}"; fi
-tick=0; last_lines=-1
-if [ "${ONESHOT:-}" = "1" ]; then assess 1; exit 0; fi
-while true; do
-  cur_lines="$(wc -l < "$RUNDIR/logs/tools.jsonl" 2>/dev/null | tr -d ' ')"; cur_lines="${cur_lines:-0}"
-  if [ "$cur_lines" != "$last_lines" ]; then
-    tick=$((tick+1)); assess "$tick"; last_lines="$cur_lines"
-  else
-    echo "${d}[oversee] no new tool activity — holding (tick skipped, saves tokens)${n}"
-  fi
-  sleep "$INTERVAL"
-done
+rc2_reviewer_mainloop "$RUNDIR" "$INTERVAL" assess oversee
