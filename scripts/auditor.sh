@@ -20,28 +20,8 @@
 #    AUDITOR_MODEL=claude-opus-4-8 scripts/auditor.sh Nimbus
 # =============================================================================
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"; . "$ROOT/lib/common.sh"
-[ -f "$ROOT/.env" ] && { set -a; . "$ROOT/.env"; set +a; }
-unset ANTHROPIC_API_KEY
-: "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN in .env}"
-# mirror lib/env.sh cache policy so ticks reuse the byte-stable prefix (OAuth makes 1h eligible)
-: "${CLAUDE_CODE_PROMPT_CACHE_TTL:=1h}"; : "${DISABLE_AUTOUPDATER:=1}"
-export CLAUDE_CODE_PROMPT_CACHE_TTL DISABLE_AUTOUPDATER
-
-usage(){ echo "usage: auditor.sh [-s|--slug <name>] [-m|--model <model>] [-i|--interval <sec>] [--oneshot] [<slug>]" >&2; }
-_slug="" _model="" _interval="" _oneshot=""; pos=()
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -s|--slug)     [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _slug="$2"; shift 2 ;;
-    -m|--model)    [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _model="$2"; shift 2 ;;
-    -i|--interval) [ $# -ge 2 ] || { echo "missing value for $1" >&2; usage; exit 2; }; _interval="$2"; shift 2 ;;
-    --oneshot)     _oneshot=1; shift ;;
-    -h|--help)     usage; exit 0 ;;
-    --)            shift; while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
-    -*)            echo "unknown option: $1" >&2; usage; exit 2 ;;
-    *)             pos+=("$1"); shift ;;
-  esac
-done
+. "$(dirname "$0")/lib/reviewer_loop.sh"   # shared scaffolding: env/cache policy, arg-parse, claude call, main loop
+rc2_reviewer_parse_args "$@"
 [ -z "$_slug" ] && [ "${#pos[@]}" -ge 1 ] && _slug="${pos[0]}"
 NAME="$_slug"
 MODEL="${_model:-${AUDITOR_MODEL:-claude-opus-4-8}}"
@@ -106,17 +86,11 @@ build_digest(){
   fi
 }
 
-# _auditor_review <model> — one reviewer pass (digest on stdin), verdict (or error text) on stdout.
-_auditor_review(){
-  timeout 300 claude -p \
-      "This is an audit digest. Per the AUDITOR instructions: judge ONLY evidence quality — is any refuted/frozen vector actually CONCLUSIVE, or was it abandoned on an INCONCLUSIVE result (a test that never reached the mechanism)? Read the raw logs/tools.jsonl and logs/raw/*.out yourself to verify, then output ONLY the verdict in the specified format. Read-only tools (Read/Glob/Grep).
----
-$(cat)" \
-      --model "$1" --append-system-prompt "$(cat "$SYS")" \
-      --allowedTools "Read Glob Grep" 2>&1
-}
-_auditor_failed(){ [ "$1" -ne 0 ] && return 0; printf '%s' "$2" | grep -qiE 'API Error|safeguards flagged|\[cyber\]|Request ID|reviewer call failed'; }
-_auditor_cyber(){ printf '%s' "$1" | grep -qiE 'safeguards flagged|\[cyber\]|Cyber Verification'; }
+# auditor's reviewer lead-in; the call/err/cyber logic is shared (scripts/lib/reviewer_loop.sh).
+AUDITOR_LEADIN="This is an audit digest. Per the AUDITOR instructions: judge ONLY evidence quality — is any refuted/frozen vector actually CONCLUSIVE, or was it abandoned on an INCONCLUSIVE result (a test that never reached the mechanism)? Read the raw logs/tools.jsonl and logs/raw/*.out yourself to verify, then output ONLY the verdict in the specified format. Read-only tools (Read/Glob/Grep)."
+_auditor_review(){ rc2_reviewer_call "$1" "$SYS" "$AUDITOR_LEADIN"; }   # $1=model, digest on stdin
+_auditor_failed(){ rc2_reviewer_failed "$@"; }
+_auditor_cyber(){ rc2_reviewer_cyber "$@"; }
 
 # write_auditor <body> — write auditor.md with a bumped AUDITOR_TICK + the push header. Echoes new tick.
 write_auditor(){
@@ -168,14 +142,4 @@ assess(){
 
 echo "${c:-}[auditor]${n:-} watching $RUNDIR  (model=$MODEL interval=${INTERVAL}s)"
 echo "${d:-}   audits evidence quality every ${INTERVAL}s; writes $AUD ONLY on a misclassified negative; every audit → $HIST ; Ctrl+C to stop${n:-}"
-tick=0; last_lines=-1
-if [ "${ONESHOT:-}" = "1" ]; then assess 1; exit 0; fi
-while [ ! -f "$RUNDIR/logs/.stop" ]; do
-  cur_lines="$(wc -l < "$RUNDIR/logs/tools.jsonl" 2>/dev/null | tr -d ' ')"; cur_lines="${cur_lines:-0}"
-  if [ "$cur_lines" != "$last_lines" ]; then
-    tick=$((tick+1)); assess "$tick"; last_lines="$cur_lines"
-  else
-    echo "${d:-}[auditor] no new tool activity — holding (tick skipped, saves tokens)${n:-}"
-  fi
-  sleep "$INTERVAL"
-done
+rc2_reviewer_mainloop "$RUNDIR" "$INTERVAL" assess auditor
