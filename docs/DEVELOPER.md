@@ -419,7 +419,7 @@ Convention worth preserving: **signals the hook must read fast and without `jq` 
                            rc2_claude_oneshot, rc2_negatives, sameness judge + watcher +
                            contradiction signal + commit_freeze, oversee + auditor launch
     hook_log.sh            per-call hook: force-log + anti-DoS + P1 accounting/guard + auditor push (sources guard_lib)
-  scripts/                 watch  oversee  auditor  guard  report  analyze_run  rag  machine  burp  ...
+  scripts/                 watch  agents  oversee  auditor  guard  report  analyze_run  rag  machine  burp  ...
   doctrine/00..60          the brain (system prompt)
   .claude/agents/          researcher  recon-analyst  exploit-dev  verifier  reverser
   OVERSEER.md JUDGE.md SURRENDER.md AUDITOR.md   out-of-band reviewer prompts (NOT in the solver's prompt)

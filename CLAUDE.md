@@ -156,7 +156,9 @@ the zero-dependency default for everything else.
 - **Secrets.** `.env`, `runs/`, `*.ovpn`, keys, HARs are gitignored. Never put a password on a
   command line (it's hook-logged); root actions use `sudo -A` via the wired askpass.
 - Temp/scratch for development goes in `tmp/`; per-run temp is `runs/<slug>/tmp` (`TMPDIR`).
-- **Helper scripts** (`scripts/`): `watch.sh` (live run viewer); `oversee.sh` (supervisor/
+- **Helper scripts** (`scripts/`): `watch.sh` (live run viewer: solver reasoning + every tool call/result);
+  `agents.sh` (the complement — a read-only merged feed of ONLY the non-solver agents' responses: oversee +
+  auditor + the Task sub-agents, from their logs; `-f` follow, `FULL=1`, `ONLY=`); `oversee.sh` (supervisor/
   critic → `supervisor.md`, auto-started by `hunt` — a herdr sibling pane inside herdr, else a
   `<tmux_base>_oversee` tmux session); `auditor.sh` (epistemic/conclusiveness auditor → `auditor.md`,
   auto-started by `hunt` the same way as a `<tmux_base>_auditor` tmux session/herdr pane; `NO_AUDITOR=1`);

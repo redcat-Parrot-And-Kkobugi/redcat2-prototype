@@ -377,6 +377,7 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 |---|---|---|
 | `hunt` | `./hunt [--fresh] <name|ip> [model] [notes]` | the launcher (§3) |
 | `scripts/watch.sh` | `scripts/watch.sh [name]` | live feed: agent reasoning + every tool call/result. `FULL=1` whole outputs, `NOCONV=1` tool-feed only, `MAX=<n>` lines |
+| `scripts/agents.sh` | `scripts/agents.sh [name]` | the complement to watch: ONLY the non-solver agents' responses (oversee + auditor + Task sub-agents) merged chronologically, read-only. `-f` follow, `-n N`/`TAIL` last N, `FULL=1` whole sub-agent results, `ONLY=oversee\|auditor\|agents` |
 | `scripts/oversee.sh` | `scripts/oversee.sh <slug> ["directive"]` | supervisor/critic loop → `supervisor.md` on drift. `OVERSEE_INTERVAL`, `OVERSEE_MODEL`, `ONESHOT=1`. Auto-started by `hunt` |
 | `scripts/auditor.sh` | `scripts/auditor.sh <slug>` | epistemic/conclusiveness auditor loop → `auditor.md` on a misclassified (inconclusive-as-refuted) negative; the hook pushes the solver to read it. `AUDITOR_INTERVAL`, `AUDITOR_MODEL`, `ONESHOT=1`. Auto-started by `hunt` |
 | `scripts/report.sh` | `scripts/report.sh <rundir>` | metrics → `writeup.md` (wall time, tool/Task counts, per-phase). Auto on exit |
