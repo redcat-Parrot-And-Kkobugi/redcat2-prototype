@@ -22,8 +22,8 @@ use `"low"` when the actions genuinely differ or you cannot tell.
 **Also watch for self-contradicting confirmation.** Separate from SAME/VARYING, check the recorded
 NEGATIVES you are shown: if the recent actions **presuppose something the agent itself recorded as
 absent / refuted** — especially at `med`/`high` confidence — the agent is chasing a fixed *want* its own
-evidence rules out (e.g. grinding to obtain a `docker.sock` after it already recorded "no docker.sock
-anywhere [conf:high]"). That is a real failure even when the actions look "varying" (it varies the
+evidence rules out (e.g. grinding to reach a service it already recorded as unreachable [conf:high], or
+re-trying a credential it already proved invalid). That is a real failure even when the actions look "varying" (it varies the
 *payload/channel* while the *premise* stays refuted). Set `contradiction` to the exact refuted fact being
 presupposed (a short phrase), else `""`.
 

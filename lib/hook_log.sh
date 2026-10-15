@@ -57,23 +57,55 @@ rc2_fp() {
   printf '%s|%s' "$tool" "$body" | md5sum | cut -c1-16
 }
 
-# _hook_surface <command> — coarse domain label for this action, so accounting can flag a lopsided
-# effort distribution (one surface hammered 200x while another got 1 glance = an under-explored surface
-# the surrender gate should re-open). Best-effort; unknown -> "other".
+# _hook_surface <command> — a DOMAIN-AGNOSTIC surface label, so accounting can flag a lopsided effort
+# distribution (one surface hammered 200x while another got 1 glance = an under-explored surface the
+# surrender gate should re-open). Deliberately names NO product or box — the old version hardcoded one
+# box's AWS services (codebuild/ecs/lambda/sqs…) so every non-cloud box collapsed to "other" and the
+# signal died. Now two structural parts:
+#   family  — tool/protocol class, scanned over the whole command so it still classifies actions wrapped
+#             in sudo/tmux/ssh: scan|web|smb|ad|db|ssh|cred|cloud|exploit|other.
+#   target  — the host:port / URL authority / IP / port the action hits; for a cloud CLI, the SERVICE
+#             subcommand (`aws <service>`, `kubectl <resource>`) read straight from the command, so cloud
+#             services differentiate structurally (cloud@codebuild vs cloud@s3) with no hardcoded taxonomy.
+# label = "family@target" (or just "family" when no target is visible). Best-effort; unknown -> "other".
 _hook_surface() {
   local c; c="$(printf '%s' "$1" | tr 'A-Z' 'a-z')"
   [ -z "$c" ] && { echo other; return; }
-  if   printf '%s' "$c" | grep -qE 'codebuild'; then echo codebuild
-  elif printf '%s' "$c" | grep -qE 'ecs|run-task|task-def|register-task'; then echo ecs
-  elif printf '%s' "$c" | grep -qE 'lambda|invoke'; then echo lambda
-  elif printf '%s' "$c" | grep -qE 'sqs|send-message|receive-message|queue'; then echo sqs
-  elif printf '%s' "$c" | grep -qE 's3|get-object|put-object|create-bucket'; then echo s3
-  elif printf '%s' "$c" | grep -qE 'ssm|secretsmanager|dynamodb|get-parameter|get-secret'; then echo secretstore
-  elif printf '%s' "$c" | grep -qE 'iam|sts |assume-role|get-caller'; then echo iam
-  elif printf '%s' "$c" | grep -qE '(^|[^a-z])ssh|sshpass|scp |hydra|kerbrute'; then echo ssh
-  elif printf '%s' "$c" | grep -qE 'nmap|masscan|rustscan|gobuster|ffuf|feroxbuster|nuclei|nikto|wpscan'; then echo recon
-  elif printf '%s' "$c" | grep -qE 'curl|wget|http|(^|[^a-z])nc |ncat'; then echo web
-  else echo other; fi
+  local fam=other tgt=""
+  if   printf '%s' "$c" | grep -qE 'nmap|masscan|rustscan|gobuster|ffuf|feroxbuster|nikto|nuclei|wpscan|dirb|whatweb'; then fam=scan
+  elif printf '%s' "$c" | grep -qE 'smbclient|smbmap|crackmapexec|nxc|netexec|rpcclient|impacket|psexec|wmiexec|smbexec'; then fam=smb
+  elif printf '%s' "$c" | grep -qE 'ldapsearch|bloodhound|kerbrute|getuserspns|secretsdump|evil-winrm|getnpusers|certipy|gettgt'; then fam=ad
+  elif printf '%s' "$c" | grep -qE 'mysql|psql|mariadb|mssql|sqsh|sqlcmd|mongo|redis-cli|sqlmap'; then fam=db
+  elif printf '%s' "$c" | grep -qE 'hydra|medusa|(^|[^a-z])john|hashcat|crackmap'; then fam=cred
+  elif printf '%s' "$c" | grep -qE '(^|[^a-z])(aws|gcloud|az|kubectl|oc|doctl)([^a-z]|$)|boto3'; then fam=cloud
+  elif printf '%s' "$c" | grep -qE '(^|[^a-z])ssh|sshpass|scp '; then fam=ssh
+  elif printf '%s' "$c" | grep -qE 'curl|wget|(^|[^a-z])http|(^|[^a-z])nc |ncat|websocat'; then fam=web
+  elif printf '%s' "$c" | grep -qE 'python|ruby|perl|(^|[^a-z])php |go run|gcc|(^|[^a-z])\./'; then fam=exploit
+  fi
+  if [ "$fam" = cloud ]; then
+    # service/resource = first BARE-WORD token after the cloud CLI (skips --flags and their url/kv values);
+    # quotes -> spaces first so it also works inside tmux/ssh-wrapped commands.
+    tgt="$(printf '%s' "$c" | sed "s/[\"']/ /g" | awk '
+      { for(i=1;i<=NF;i++) if($i ~ /^(aws|gcloud|az|kubectl|oc|doctl)$/){
+          skip=0
+          for(j=i+1;j<=NF;j++){
+            if($j ~ /^--?(region|profile|output|endpoint|endpoint-url|context|namespace|cluster|n|o|p|r)$/){ skip=1; continue }  # value-taking global flag
+            if(skip){ skip=0; continue }                                                                                        # its value
+            if($j ~ /^-/){ continue }                                                                                           # a bare flag
+            if($j ~ /^[a-z][a-z0-9-]*$/){ print $j; exit }                                                                      # first real service/resource word
+          }
+        } }')"
+  fi
+  if [ -z "$tgt" ]; then
+    tgt="$(printf '%s' "$c" | grep -oE 'https?://[^/ "'"'"']+' | head -1 | sed -E 's#https?://##')"
+    [ -z "$tgt" ] && tgt="$(printf '%s' "$c" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}(:[0-9]+)?' | head -1)"
+    [ -z "$tgt" ] && tgt="$(printf '%s' "$c" | grep -oE '[a-z0-9][a-z0-9.-]*\.(htb|local|lan|internal)' | head -1)"
+    if [ -z "$tgt" ]; then
+      local p; p="$(printf '%s' "$c" | grep -oE '(-p|--port|port)[ =]+[0-9]{1,5}' | grep -oE '[0-9]+' | head -1)"
+      [ -n "$p" ] && tgt="p$p"
+    fi
+  fi
+  if [ -n "$tgt" ]; then printf '%s@%s\n' "$fam" "$tgt"; else printf '%s\n' "$fam"; fi
 }
 
 # rc2_guard_msg <reason> <hypo> <exp> <ceil> <rep> — structured message to the agent (point 7: echoes
