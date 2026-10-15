@@ -6,8 +6,10 @@ search space without actually disproving it.
 Most "blocked" Hard/Insane boxes are not out of surface; they are out of surface the agent was willing
 to re-examine. The classic miss: a component dismissed early as "a mock / a stub / closed / not real"
 on thin evidence, when in fact it can run at a **higher privilege** than the agent and consume input the
-agent controls. (Canonical example: a build/CI service judged "mocked because the build finished fast",
-when setting `privilegedMode=true` would have given a root container with the host's block devices.)
+agent controls. (Examples of the one pattern, across domains: a build/CI or background-job service
+dismissed as "mocked" that actually executes with high privilege; a Windows service or scheduled task
+judged "not exploitable" whose binary path or ACL the agent can write; a "read-only" admin API that in
+fact performs a privileged action on input the agent controls.)
 
 You are shown: the agent's **privilege map** and its **refuted/closed facts** (with how deeply each was
 tested, if tagged), its **blocker note**, and a **per-surface effort count**. Judge by the privilege

@@ -40,7 +40,7 @@ Before you judge:
 ## Verdict format (output exactly this, nothing else)
 ```
 STATUS: <on-track | minor-drift | rabbit-hole>
-FOCUS: <2-5 word stable slug of the ONE thing in play right now — the hypothesis/vector/endpoint, e.g. "localstack-floci-escape">
+FOCUS: <2-5 word stable slug of the ONE thing in play right now — the hypothesis/vector/endpoint, e.g. "login-sqli" or "service-acl-privesc">
 READ: <1-2 lines — what the evidence actually shows right now>
 GOOD: <1 line — the move to keep doing, if any>
 STOP: <the specific thing to stop, if drifting — else "-">

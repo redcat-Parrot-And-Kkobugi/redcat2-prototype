@@ -94,15 +94,17 @@ pass and why**. Choose it by expected value, not by habit:
   honest pass asking *what is actually here and what does it reach*: devices, caps, mounts, env, writable
   paths, neighbours, and above all the **privilege it runs at** — **before** you conclude "nothing here".
   This is a disciplined habit, not a checklist and not a hard gate: its value is noticing the primitive
-  you *weren't* looking for (a block device you can self-mount, a capability you didn't expect, a
-  higher-uid process) that a checklist of escapes you already know would skip past.
-  **Checking for the one primitive you came hoping to find — a `docker.sock`, a specific bind-mount — is
-  NOT enumeration; it is confirming a *want*.** Enumerate what is *actually present* (`ls -la /dev`,
-  `capsh --print`, `mount`, `/proc/self/status`, env, writable paths, neighbours) and let the inventory
-  pick the primitive. If you came in wanting `docker.sock` and your own evidence already says it is
-  absent, the move is not to keep trying to produce it — it is to list what *is* there and escalate with
-  that. Catching yourself write off a context after testing only the escape you had in mind is the
-  signal to do this.
+  you *weren't* looking for (a writable path a higher-privileged process trusts, a capability or token
+  you did not expect, a service or account running above you) that a checklist of escapes you already
+  know would skip past.
+  **Checking for the one primitive you came hoping to find — a specific socket, a bind-mount, a
+  particular vulnerable binary — is NOT enumeration; it is confirming a *want*.** Enumerate what is
+  *actually present* (on Linux: `ls -la /dev`, `capsh --print`, `mount`, `/proc/self/status`, env,
+  writable paths, neighbours; on Windows: `whoami /all`, token privileges, service/registry ACLs,
+  shares, scheduled tasks) and let the inventory pick the primitive. If you came in wanting one specific
+  primitive and your own evidence already says it is absent, the move is not to keep trying to produce
+  it — it is to list what *is* there and escalate with that. Catching yourself write off a context after
+  testing only the escape you had in mind is the signal to do this.
 - **Crossing into a higher-privilege context *is* most of the win — the next primitive is usually already
   inside it, so inventory the context before you try to leave it by the door you came for.** "Higher
   privilege" is tech-agnostic: a more powerful account or role, a process / service / scheduled job running
@@ -213,11 +215,12 @@ built, one proven rung at a time. Re-score the board.
   a stuck line forward or thaws a frozen one.
 - **Conclusiveness — not effort — is what licenses a freeze.** Before you record a hypothesis
   `refuted`/`frozen` or treat a vector as dead, apply one test: **did the thing you were testing
-  actually get to speak?** If the failure came from the *mechanism itself* — the privileged build
-  ran and exposed no block devices, the `mount` executed and the device was absent, the API ran and
-  returned *denied* — that is a **conclusive negative**: the refute/freeze is earned, confidence may
-  be high. But if the failure came *on the way to* the mechanism — a build that FAULTed before your
-  payload ran, a request that timed out, a transport that dropped, a tool that errored, an empty
+  actually get to speak?** If the failure came from the *mechanism itself* — the exploit reached the
+  service and it rejected the input, the credential authenticated and the account simply lacked the
+  right, the API executed and returned *denied* — that is a **conclusive negative**: the refute/freeze
+  is earned, confidence may be high. But if the failure came *on the way to* the mechanism — a job or
+  tool that errored before your payload ran, a request that timed out, a transport that dropped, an
+  auth step to the tool that failed, an empty
   result, a `[cyber]`-killed turn — the mechanism **never answered**: the result is **INCONCLUSIVE**,
   and inconclusive evidence **cannot** license a freeze no matter how many attempts it cost. "The
   moves I know failed" refutes *the moves*, not *the vector*. An inconclusive result demands a
@@ -235,10 +238,10 @@ built, one proven rung at a time. Re-score the board.
   the real path permanently. You still stop; you just stop with the correct terminal state.
 - **Before fleeing a high-impact vector, name the assumption that actually broke — not the next
   vector to try.** When a ROOT-impact path "fails" and you feel the pull toward a more exotic one,
-  stop and separate *what the failure disproved* from *what you merely assumed*. A privileged-container
-  escape you only ever attempted via docker.sock has not disproven "privileged container → host"; it
-  has disproven "docker.sock is present here". The fix is almost always to vary your *own* wrong
-  assumption on the live vector (a different escape primitive, a different image, a different exec
+  stop and separate *what the failure disproved* from *what you merely assumed*. A privilege path you
+  only ever attempted one specific way (one socket, one ACL, one gadget, one credential) has not
+  disproven the path — it has disproven that one technique. The fix is almost always to vary your *own*
+  wrong assumption on the live vector (a different primitive, a different entry point, a different exec
   path), not to escalate to a new, more complicated door. **A ROOT-impact vector is the last thing you
   freeze, not the first thing you flee.**
 - **Zoom-out trigger:** whenever you freeze a hypothesis, or every ~10 actions, re-read

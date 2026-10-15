@@ -45,9 +45,9 @@ later fact could break.
 **Recording a negative** ("X closed / not present / a mock / refuted") needs the same discipline as
 a positive, plus two extra tags, because a shallow negative wrongly prunes the search space
 (`00` → evidence of absence): write **what test established it** and a **confidence** — e.g.
-`CodeBuild = real but no docker.sock [observed · tested: 1 build, privilegedMode untried · conf: low]`
-vs `ECS drops all mount/priv fields [observed · tested: host-vol + dockerVolumeConfiguration +
-privileged + linuxParameters, 20+ runs · conf: high]`. A `low`-confidence negative is a **re-open
+`SUID binary present but input looks sanitised [observed · tested: 1 payload, format-string path untried · conf: low]`
+vs `service account cannot write the share [observed · tested: 6 ACL/path combos, both creds,
+20+ runs · conf: high]`. A `low`-confidence negative is a **re-open
 candidate**, not a wall — it is exactly what the blocker re-audit (`00` → Done) and the surrender
 gate re-test first. Never let a one-glance dismissal sit here unqualified as if it were proven.
 
@@ -101,13 +101,13 @@ Shape (create it if missing — `H<n>` keys mirror the board exactly):
                         "by": "self", "resumable": true, "at": "" } }
   },
   "confirmed_path": [
-    { "h": "H2", "summary": "worker RCE via unsafe yaml.load -> shell as worker",
-      "how": "SSRF octal-IP bypass -> IMDS -> nimbus-web-role creds -> aws sqs send-message yaml.load os.system gadget (non-blocking setsid)",
-      "yields": "shell as worker in tmux <tmux_base>_main (verify: id -> uid=1000)", "at": "<utc>" }
+    { "h": "H2", "summary": "auth bypass on the admin panel -> arbitrary file write -> web shell",
+      "how": "parameter pollution on /login skips the role check -> the import form writes an attacker-controlled path (traversal) -> drop a shell under the docroot",
+      "yields": "shell as the web user in tmux <tmux_base>_main (verify: id -> uid=33)", "at": "<utc>" }
   ],
   "negatives": [
-    { "fact": "no docker.sock in any reachable container", "confidence": "high", "tested": "find / + probe :2375 on host/floci, 3 contexts" },
-    { "fact": "codebuild privileged escape", "confidence": "low", "tested": "4 attempts all FAULTed before BUILD (inconclusive — payload never ran)", "kind": "untestable", "missing": "a build image cached on the host that actually starts" }
+    { "fact": "SSH password auth disabled for every known user", "confidence": "high", "tested": "2 users x top-5k list + manual, key-only confirmed" },
+    { "fact": "the admin API's bulk-import endpoint", "confidence": "low", "tested": "3 attempts all timed out before the import ran (inconclusive — handler never executed)", "kind": "untestable", "missing": "a request path that does not hit the upstream timeout" }
   ],
   "override": null
 }
@@ -125,7 +125,7 @@ observable signal that proves the step re-succeeded (e.g. `id -> uid=1000`). Thi
 session **re-walks**, not a frozen script: the live instance differs every spawn (rotated creds, new
 container IDs, a fresh flag), so the durable asset is the *method*, re-executed with judgment and
 re-verified. You MAY drop a helper script in `exploit/` for a purely mechanical sub-step (e.g. re-pulling
-IMDS creds) and mention it in `how`, but treat it as an adaptable aid, **never** as the replay mechanism —
+a short-lived token the step depends on) and mention it in `how`, but treat it as an adaptable aid, **never** as the replay mechanism —
 redcat2 is not a playbook runner (`00`/README). **(3)** When you
 freeze a hypothesis, set `freeze.frozen=true` with an **honest** `confidence` and a one-line `reason`:
 a `low`/`med` freeze may be thawed later if a new fact revives it, a `high` one should not be reopened

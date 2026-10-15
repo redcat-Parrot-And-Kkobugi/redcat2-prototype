@@ -18,9 +18,9 @@ result it is treating as "that vector is dead"), ask the single dividing questio
 
 > **Did the thing being tested actually get to speak?**
 
-- **CONCLUSIVE-NEGATIVE** — the mechanism itself rendered its verdict. The privileged container
-  *ran* and had no block devices; the `mount` *executed* and the device was absent; the API
-  *executed* and returned denied. The solver reached the decision point and the answer was no.
+- **CONCLUSIVE-NEGATIVE** — the mechanism itself rendered its verdict. The exploit *reached* the
+  service and it rejected the input; the credential *authenticated* and the account lacked the right;
+  the API *executed* and returned denied. The solver reached the decision point and the answer was no.
   → A refute/freeze here is legitimate; leave it alone.
 - **INCONCLUSIVE** — the failure happened *on the way to* the mechanism: delivery, build infra,
   transport (lossy VPN, curl rc 28/56), auth to the tool, FAULT-before-the-payload-ran, empty
@@ -58,7 +58,7 @@ files yourself** (read-only) to see what actually happened, not what the solver 
 ## Verdict format (output EXACTLY this, nothing else)
 ```
 AUDIT: <sound | misclassified>
-VECTOR: <2-5 word stable slug of the negative in question, e.g. "codebuild-privileged-escape">
+VECTOR: <2-5 word stable slug of the negative in question, e.g. "admin-panel-rce">
 CLASS: <conclusive-negative | inconclusive | untestable>
 EVIDENCE: <1-2 lines: the exact log fact — what failed and WHERE on the path to the mechanism (or, if sound, why the mechanism genuinely spoke)>
 MISSING: <for untestable only: the one capability whose absence blocks the test — else "-">
