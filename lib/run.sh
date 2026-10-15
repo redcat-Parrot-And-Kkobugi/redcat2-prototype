@@ -194,6 +194,14 @@ rc2_relaunch_target_line() {
 # less-restricted model (CYBER_FALLBACK_MODEL) or the Cyber Verification Program, not more relaunches.
 _rc2_log_has_cyber() { tail -n 60 "${1:-/dev/null}" 2>/dev/null | grep -qiE 'safeguards flagged|\[cyber\]|Cyber Verification|cyber safeguard'; }
 
+# _rc2_log_has_usage_limit <log> — did the session end because the subscription/token USAGE LIMIT (5h
+# window) or a rate/overload limit was hit? This is NOT a crash: relaunching immediately just re-hits the
+# limit and burns a restart. The signature set is env-overridable (RC2_USAGE_LIMIT_RE) because the exact
+# wording can change. Kept reasonably specific so a benign line doesn't trip a 30-min backoff.
+_rc2_log_has_usage_limit() {
+  tail -n 80 "${1:-/dev/null}" 2>/dev/null | grep -qiE "${RC2_USAGE_LIMIT_RE:-usage limit|limit (reached|will reset)|5-?hour limit|rate limit(ed)?|too many requests|429 |error 429|overloaded_error|529 }"
+}
+
 # _rc2_attempt_guard <conv> <cyber0> <pid> <attempt> — backgrounded liveness watchdog for ONE claude -p
 # attempt. Fixes the "it just paused" failure: the hunt terminal is silent during an attempt (the agent
 # stream is redirected to the log, not here), so a long, spinning, or wedged attempt is indistinguishable
@@ -235,7 +243,7 @@ _rc2_attempt_guard() {
 }
 
 rc2_run_loop() {
-  local attempt=0 rc cyber_tries=0 surrender_reopens=0
+  local attempt=0 rc cyber_tries=0 surrender_reopens=0 usage_waits=0
   local PRETTY=(cat); [ -f "$RC2_ROOT/scripts/conv_fmt.py" ] && PRETTY=(python3 "$RC2_ROOT/scripts/conv_fmt.py")
   while :; do
     attempt=$((attempt+1))
@@ -269,6 +277,23 @@ rc2_run_loop() {
         echo "[hunt] cyber safeguard hit ${cyber_tries}x (cap ${CYBER_MAX_RETRIES:-10}) — stopping. A fresh session won't clear a content-based flag; set CYBER_FALLBACK_MODEL=<less-restricted model> or apply to the Cyber Verification Program." | tee -a "$LOG"; break
       fi
       printf '\033[33m[hunt] agent hit a cyber safeguard — relaunching a fresh session (%d/%s)\033[0m\n' "$cyber_tries" "${CYBER_MAX_RETRIES:-10}" | tee -a "$LOG"; sleep 3; continue
+    fi
+    # usage/token-limit termination: NOT a crash. Relaunching now just re-hits the limit and wastes a
+    # restart, so back off until the window resets and resume from disk (the re-launch re-reads the three
+    # living files — nothing is lost). Does NOT count toward MAX_RESTARTS; bounded by RC2_USAGE_MAX_WAITS so
+    # a mis-detect can't wait forever. The real constraint on a hunt is the per-window token budget, so a
+    # usage stop is an expected, recoverable event — see the Insane execution plan.
+    if _rc2_log_has_usage_limit "$LOG"; then
+      usage_waits=$((usage_waits+1))
+      if [ "$usage_waits" -gt "${RC2_USAGE_MAX_WAITS:-12}" ]; then
+        echo "[hunt] usage-limit backoff hit ${usage_waits}x (cap ${RC2_USAGE_MAX_WAITS:-12}) — stopping. Re-run ./hunt $TARGET once your limit resets (state is on disk)." | tee -a "$LOG"; break
+      fi
+      local _wait="${RC2_USAGE_BACKOFF:-1800}" _slept=0
+      printf '\033[33m[hunt] usage/token limit reached — NOT a crash. Backing off %ss, then resuming from disk (wait %d/%s). Writes logs/.stop or Ctrl-C to abort.\033[0m\n' "$_wait" "$usage_waits" "${RC2_USAGE_MAX_WAITS:-12}" | tee -a "$LOG"
+      while [ "$_slept" -lt "$_wait" ] && [ ! -f "$RUNDIR/logs/.stop" ]; do sleep 10; _slept=$((_slept+10)); done
+      [ -f "$RUNDIR/logs/.stop" ] && { echo "[hunt] .stop during usage backoff — stopping." | tee -a "$LOG"; break; }
+      attempt=$((attempt-1))   # a usage wait is a retry of the SAME attempt, not a crash-restart
+      continue
     fi
     if [ "$rc" -eq 0 ]; then
       # C (surrender gate): before respecting a clean-exit blocker, let an independent reviewer
@@ -632,54 +657,34 @@ rc2_surrender_directive() {
   printf '%s surrender-gate REOPEN %s via %s: %s\n' "$(rc2_utc)" "$comp" "$prim" "$reason" >> "$rundir/logs/guard.log" 2>/dev/null || true
 }
 
-# ── side processes: reviewer sidecars (oversee + auditor), placed per the runtime ────────────
-# rc2_launch_sidecar <label> <split_dir> <disabled> <cmd> — start a reviewer sidecar beside the hunt:
-# a herdr sibling pane inside herdr (HERDR_ENV=1), else a <tmux_base>_<label> tmux session. Records the
-# pane id in global HERDR_<LABEL>_PANE (uppercased) so rc2_stop_sidecar can close it. <disabled>=1 (the
-# operator NO_<LABEL> toggle) skips it. Needs $RC2_ROOT, $tmux_base. Shared by oversee + auditor below.
+# ── side processes: reviewer sidecars (oversee + auditor) ────────────────────────────────────
+# rc2_launch_sidecar <label> <disabled> <cmd> — start a reviewer sidecar beside the hunt in a
+# <tmux_base>_<label> tmux session. <disabled>=1 (the operator NO_<LABEL> toggle) skips it. tmux-only:
+# herdr was removed — it was decorative (all real interactive work was already tmux, and a herdr sidecar
+# pane gave nothing tmux didn't; its async pane_run/pane_read matched tmux). Needs $RC2_ROOT, $tmux_base.
 rc2_launch_sidecar() {
-  local label="$1" dir="$2" disabled="$3" cmd="$4" up; up="$(printf '%s' "$label" | tr 'a-z' 'A-Z')"
-  declare -g "HERDR_${up}_PANE="
+  local label="$1" disabled="$2" cmd="$3" up; up="$(printf '%s' "$label" | tr 'a-z' 'A-Z')"
   [ "$disabled" = "1" ] && { echo "[$label] disabled (NO_${up}=1)"; return 0; }
-  if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
-    local p; p="$(herdr pane split --current --direction "$dir" --cwd "$RC2_ROOT" --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty' 2>/dev/null)"
-    if [ -n "$p" ]; then
-      herdr pane run "$p" "$cmd" >/dev/null 2>&1
-      declare -g "HERDR_${up}_PANE=$p"
-      echo "[$label] herdr pane $p ($dir split; herdr pane read $p to view)"
-      return 0
-    fi
-    echo "[$label] herdr pane split failed — falling back to tmux"
-  fi
   tmux new-session -d -s "${tmux_base}_${label}" "cd '$RC2_ROOT' && $cmd" 2>/dev/null \
     && echo "[$label] tmux '${tmux_base}_${label}' (attach to watch; NO_${up}=1 to disable)" || true
 }
 
-# rc2_stop_sidecar <label> — stop whatever rc2_launch_sidecar <label> started (herdr pane or tmux session).
-rc2_stop_sidecar() {
-  local label="$1" up; up="$(printf '%s' "$label" | tr 'a-z' 'A-Z')"
-  # NB: split across two `local` statements — bash does NOT see `var` within the SAME `local` that
-  # declares it, so `local var=.. pane="${!var:-}"` raises `invalid indirect expansion` (SC2318) and,
-  # under `set -e`, aborts cleanup mid-way. See the bash same-local gotcha.
-  local var="HERDR_${up}_PANE"
-  local pane="${!var:-}"
-  if [ -n "$pane" ]; then herdr pane close "$pane" 2>/dev/null || true
-  else tmux kill-session -t "${tmux_base}_${label}" 2>/dev/null || true; fi
-}
+# rc2_stop_sidecar <label> — stop the sidecar's tmux session.
+rc2_stop_sidecar() { tmux kill-session -t "${tmux_base}_$1" 2>/dev/null || true; }
 
 # supervisor (oversee) — strategy critic -> supervisor.md. Guard/gate env is passed explicitly because a
-# pre-existing tmux server would not inherit it. herdr: right split.
+# pre-existing tmux server would not inherit it.
 rc2_launch_oversee() {
   local rundir="$1" slug; slug="$(basename "$rundir")"
   local ocmd="RC2_GATE='${RC2_GATE:-}' RC2_GUARD='${RC2_GUARD:-off}' RC2_GATE_N='${RC2_GATE_N:-}' RC2_GATE_MODE='${RC2_GATE_MODE:-}' OVERSEE_INTERVAL='${OVERSEE_INTERVAL:-600}' scripts/oversee.sh '$slug'"
-  rc2_launch_sidecar oversee right "${NO_OVERSEE:-0}" "$ocmd"
+  rc2_launch_sidecar oversee "${NO_OVERSEE:-0}" "$ocmd"
 }
 rc2_stop_oversee() { rc2_stop_sidecar oversee; }
 
-# epistemic auditor — evidence-quality reviewer -> auditor.md (hook pushes the solver). herdr: down split.
+# epistemic auditor — evidence-quality reviewer -> auditor.md (hook pushes the solver).
 rc2_launch_auditor() {
   local rundir="$1" slug; slug="$(basename "$rundir")"
   local acmd="AUDITOR_INTERVAL='${AUDITOR_INTERVAL:-420}' AUDITOR_MODEL='${AUDITOR_MODEL:-claude-opus-4-8}' scripts/auditor.sh '$slug'"
-  rc2_launch_sidecar auditor down "${NO_AUDITOR:-0}" "$acmd"
+  rc2_launch_sidecar auditor "${NO_AUDITOR:-0}" "$acmd"
 }
 rc2_stop_auditor() { rc2_stop_sidecar auditor; }

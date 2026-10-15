@@ -15,7 +15,7 @@ like a researcher instead of running a checklist, scaling its effort to what the
 `--dangerously-skip-permissions`. Point it only at machines you are permitted to test.
 
 **Full guide:** [`docs/GUIDE.md`](docs/GUIDE.md) — setup, every command and flag, every script,
-tmux/herdr, reversing, resume, observability, security, and troubleshooting.
+tmux, reversing, resume, observability, security, and troubleshooting.
 **Developer guide:** [`docs/DEVELOPER.md`](docs/DEVELOPER.md) — the whole pipeline, why it is built
 this way, the guard's failure-mode model, the data model, and the invariants, with ASCII diagrams.
 
@@ -36,10 +36,10 @@ needed, and auto-submits captured flags via the API. The whole HAR → token →
 pipeline is bundled and automatic.
 
 **The supervisor runs alongside by default.** `./hunt` starts `oversee.sh` so the critic watches
-and writes `supervisor.md` without a second terminal — in a **herdr sibling pane** when you run
-`./hunt` inside herdr, otherwise a `<tmux_base>_oversee` tmux session. `NO_OVERSEE=1 ./hunt …`
-disables it; `OVERSEE_INTERVAL=300` tunes the cadence. A second sibling, `auditor.sh`, runs the
-same way (an `<tmux_base>_auditor` session / herdr pane) and audits **evidence quality** rather than
+and writes `supervisor.md` without a second terminal — in a `<tmux_base>_oversee` tmux session.
+`NO_OVERSEE=1 ./hunt …`
+disables it; `OVERSEE_INTERVAL=300` tunes the cadence. A second sidecar, `auditor.sh`, runs the
+same way (a `<tmux_base>_auditor` tmux session) and audits **evidence quality** rather than
 strategy — it catches a vector abandoned on an inconclusive result and pushes the solver to re-open
 it. `NO_AUDITOR=1` disables it; `AUDITOR_INTERVAL=300` tunes the cadence.
 
@@ -175,13 +175,13 @@ runs/<slug>/
   [`doctrine/20-research-and-dorking.md`](doctrine/20-research-and-dorking.md).
 - **Multiple models by role.** Cheap bulk parsing on haiku, research on sonnet, hard
   reasoning and verification on opus — assigned per sub-agent, tunable per box.
-- **tmux and herdr, each per its need.** tmux (zero-dependency, default) does all in-box
-  session work: the `_main` watch session, the agent's interactive sessions (reverse shells,
-  `msfconsole`, the `_dbg` gdb session), and the `_oversee` loop. (The VPN is a separate
-  `openvpn` daemon, not tmux.) [herdr.dev](https://herdr.dev/) is the optional outer/operator
-  runtime for hosting hunts as disconnect-surviving, status-aware sessions and across multiple
-  machines; its in-process agent coordination overlaps Claude Code's native sub-agents, so it's
-  not used for that. Full division of labor in `CLAUDE.md`.
+- **tmux is the only session layer.** tmux (zero-dependency) does all in-box session work: the
+  `_main` watch session, the agent's interactive sessions (reverse shells via `pwncat-cs`,
+  `msfconsole`, the `_dbg` gdb session), and the `_oversee` / `_auditor` reviewer sidecars. (The VPN
+  is a separate `openvpn` daemon, not tmux.) herdr was removed — it was a decorative outer layer that
+  only placed the sidecars in panes tmux already handles (and its in-process agent coordination
+  overlapped Claude Code's native sub-agents), so it bought nothing; one fewer moving part. Full
+  division of labor in `CLAUDE.md`.
 - **Standalone.** No runtime dependency on any sibling project — the HTB API client, HAR
   token extractor, and log renderer are vendored into this tree, and it reads only its own
   `.env`. The design lineage is redcat1, but deleting redcat1 does not affect redcat2. The

@@ -16,7 +16,7 @@ something off-script. redcat2 replaces that **procedural, technique-combination*
 with an **epistemic one**: observe → hypothesize → research → experiment → verify → reflect,
 looping until the flags fall. The agent reasons from evidence and live research, not a recipe.
 
-The full operator reference — setup, every command and flag, every script, tmux/herdr,
+The full operator reference — setup, every command and flag, every script, tmux,
 reversing, resume, observability, and troubleshooting — is `docs/GUIDE.md` (and `README.md`).
 The **design rationale** — the whole pipeline, why it is shaped this way, the guard's failure-mode
 model, the data model, and the invariants (with ASCII diagrams) — is `docs/DEVELOPER.md`.
@@ -43,8 +43,8 @@ relaunched. `NO_RESTART=1` runs exactly once. Watch any run live with `scripts/w
 env, **refreshes the HTB token when stale** (`rc2_ensure_htb_token`: `rc2_import_har` copies
 the newest `*.har` from `$HAR_SRC` — default the Windows DevTools folder — into `har/`, then
 the bundled extractor writes a verified token to `.env`), resolves/spawns the box via the HTB
-API, does a VPN pre-flight, scaffolds `runs/<slug>/`, starts `oversee.sh` alongside — a herdr
-sibling pane if run inside herdr, else a `<tmux_base>_oversee` tmux session (unless `NO_OVERSEE=1`) —
+API, does a VPN pre-flight, scaffolds `runs/<slug>/`, starts `oversee.sh` alongside in a
+`<tmux_base>_oversee` tmux session (unless `NO_OVERSEE=1`) —
 and likewise `auditor.sh` (the epistemic auditor; unless `NO_AUDITOR=1`),
 builds the system prompt by
 concatenating `doctrine/*.md`, then launches `claude -p` with `--dangerously-skip-permissions`,
@@ -125,26 +125,21 @@ shared wordlist tree that is not part of any project. If the HTB API/token is ab
 `./hunt <ip>` still works in IP-only mode (no spawn/submit). Deleting `/home/kali/redcat` does
 not affect redcat2.
 
-## Terminals: tmux and herdr (division of labor)
+## Terminals: tmux (the only session layer)
 
-**tmux is the default and does all in-box session work**, each per its need:
+**tmux does all session work**, each session per its need:
 - **`<tmux_base>_main`** — long/progress tools the operator watches live.
-- the agent's own interactive sessions it drives via `send-keys`: reverse shells, `msfconsole`,
-  handlers, and the **`<tmux_base>_dbg`** gdb session.
-- **`<tmux_base>_oversee`** — the supervisor loop (only when NOT inside herdr; see below).
+- the agent's own interactive sessions it drives via `send-keys`: reverse shells (`pwncat-cs`),
+  `msfconsole`, handlers, and the **`<tmux_base>_dbg`** gdb session.
+- **`<tmux_base>_oversee`** / **`<tmux_base>_auditor`** — the two reviewer sidecars.
 tmux is zero-dependency and lives in the agent's shell env, so everything runs on it by default.
 (The OpenVPN tunnel is a separate system daemon — `openvpn --daemon`, logged to `logs/openvpn.log`
 — not a tmux session; it's shared infra and left up across hunts.)
 
-**herdr** ([herdr.dev](https://herdr.dev) — a runtime for coding agents: persistent, status-aware
-sessions, a socket API to coordinate agents, multi-machine over SSH) is the **outer / operator**
-layer: run `./hunt` inside a herdr pane and it becomes herdr-aware — `rc2_launch_oversee` detects
-`HERDR_ENV=1` and puts oversee in a **sibling pane** (`herdr pane split --current` + `pane run`)
-instead of a tmux session; cleanup closes that pane. Outside herdr, oversee falls back to tmux.
-herdr's *in-process* agent coordination overlaps Claude Code's native sub-agents (which redcat2
-uses), so herdr is not used for that. herdr is installed here; the pane mechanics are verified.
-Start it with `herdr` (TUI) or `herdr server` (headless), then run `./hunt` in a pane. tmux stays
-the zero-dependency default for everything else.
+> **herdr was removed** (it was decorative — it only placed the reviewer sidecars in sibling panes,
+> which tmux sessions do just as well; its in-process agent coordination overlapped Claude Code's
+> native sub-agents, so it was never used for that). One fewer moving part; tmux is the sole session
+> layer. `rc2_launch_sidecar`/`rc2_stop_sidecar` are now tmux-only.
 
 ## Conventions
 
@@ -159,9 +154,9 @@ the zero-dependency default for everything else.
 - **Helper scripts** (`scripts/`): `watch.sh` (live run viewer: solver reasoning + every tool call/result);
   `agents.sh` (the complement — a read-only merged feed of ONLY the non-solver agents' responses: oversee +
   auditor + the Task sub-agents, from their logs; `-f` follow, `FULL=1`, `ONLY=`); `oversee.sh` (supervisor/
-  critic → `supervisor.md`, auto-started by `hunt` — a herdr sibling pane inside herdr, else a
-  `<tmux_base>_oversee` tmux session); `auditor.sh` (epistemic/conclusiveness auditor → `auditor.md`,
-  auto-started by `hunt` the same way as a `<tmux_base>_auditor` tmux session/herdr pane; `NO_AUDITOR=1`);
+  critic → `supervisor.md`, auto-started by `hunt` in a `<tmux_base>_oversee` tmux session);
+  `auditor.sh` (epistemic/conclusiveness auditor → `auditor.md`, auto-started by `hunt` in a
+  `<tmux_base>_auditor` tmux session; `NO_AUDITOR=1`);
   `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
   `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
@@ -188,7 +183,11 @@ the zero-dependency default for everything else.
 - **Resilient run loop & launch reset.** `rc2_run_loop` guards each `claude -p` attempt with a backgrounded
   `_rc2_attempt_guard`: a terminal **heartbeat** (`RC2_HEARTBEAT`=60s), a **cyber-spin kill** (`RC2_CYBER_SPIN`=10
   safeguard trips in one session → kill it; a fresh session re-trips the same content), and a **wedge kill**
-  (`RC2_HANG_KILL`=600s with no output). At launch (before watchers) `hunt` also rolls `journal.md` over
+  (`RC2_HANG_KILL`=600s with no output). A **usage/token-limit** stop is NOT treated as a crash: the loop
+  detects it (`_rc2_log_has_usage_limit`, `RC2_USAGE_LIMIT_RE`) and **backs off `RC2_USAGE_BACKOFF`=1800s then
+  resumes from disk without consuming a `MAX_RESTARTS` attempt** (bounded by `RC2_USAGE_MAX_WAITS`=12; the
+  backoff wakes early on `logs/.stop`) — the real constraint on a long Insane hunt is the per-window token
+  budget, so a limit stop is an expected, recoverable event, not a failure. At launch (before watchers) `hunt` also rolls `journal.md` over
   `RC2_JOURNAL_KEEP`=200 lines into `journal.archive.md` (`rc2_rotate_journal`, bounds re-hydration) and
   **re-applies `RC2_CEIL`/`RC2_WARN` to the resume-preserved `logs/accounting.json`** (the hook reads the
   ceiling from the file, so an operator override would otherwise be ignored on resume).
@@ -222,8 +221,8 @@ the zero-dependency default for everything else.
   enabled it also drives the **weighted gate** — only `RC2_GATE_N` consecutive same-`FOCUS`
   rabbit-hole verdicts raise the live guard level (via `guard.sh`, re-asserted each tick). A **second,
   orthogonal** sibling runs the same way — `auditor.sh` (prompt `AUDITOR.md`, also kept out of `doctrine/`),
-  launched by `hunt` alongside oversee (`rc2_launch_auditor`/`rc2_stop_auditor`, herdr sibling pane inside
-  herdr else `<tmux_base>_auditor` tmux; `NO_AUDITOR=1` disables). oversee judges **strategy** (rabbit-hole/
+  launched by `hunt` alongside oversee (`rc2_launch_auditor`/`rc2_stop_auditor`, a `<tmux_base>_auditor`
+  tmux session; `NO_AUDITOR=1` disables). oversee judges **strategy** (rabbit-hole/
   priority, pull via `SUPERVISOR_TICK`); the auditor judges **evidence quality** (conclusiveness, push via
   `AUDITOR_TICK` + the hook). They are deliberately separate channels so "re-prioritize" never blurs with
   "your evidence is inconclusive".
