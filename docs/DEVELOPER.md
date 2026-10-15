@@ -91,8 +91,8 @@ Read these together. The brain is prose; the team is prompts; the memory is file
     |-- rc2_status_writer &   bg: status.md every ~600s + live confirmed-path -> writeup.md
     |-- rc2_health_watcher &  bg: target_health.md UP/DOWN; on respawn-IP rewrite target.env + MOVED
     |-- rc2_guard_watcher &   bg: sameness judge + contradiction signal  (only if guard on)
-    |-- rc2_launch_oversee    supervisor (herdr pane, else tmux session)
-    |-- rc2_launch_auditor    epistemic/conclusiveness auditor (herdr pane, else tmux session)
+    |-- rc2_launch_oversee    supervisor (tmux session)
+    |-- rc2_launch_auditor    epistemic/conclusiveness auditor (tmux session)
     |
     v
   rc2_run_loop

@@ -17,7 +17,7 @@ real commands against the target with `--dangerously-skip-permissions`.
 - [5. Sub-agents](#5-sub-agents)
 - [6. The run directory & living memory](#6-the-run-directory--living-memory)
 - [7. Every script](#7-every-script)
-- [8. tmux & herdr](#8-tmux--herdr)
+- [8. tmux](#8-tmux)
 - [9. Reversing (IDA + gdb)](#9-reversing-ida--gdb)
 - [10. Resume, restart, fresh](#10-resume-restart-fresh)
 - [11. Observability](#11-observability)
@@ -74,8 +74,6 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
   point at the install (and `ida64`/`idat64` aliases).
 - **gdb plugins** — installed via `gdb-plugin-relative-installer`; launchers on PATH:
   `gdb-pwndbg` / `gdb-gef` / `gdb-peda` (see §9).
-- **herdr** (optional) — `curl -fsSL https://herdr.dev/install.sh | sh`; run `./hunt` inside it
-  for a persistent, status-aware operator workspace (see §8).
 - **Burp** (optional) — `scripts/burp.sh up` before `./hunt` for `mcp__burp__*`.
 
 ---
@@ -103,6 +101,9 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `NO_STOP` | 0 | `1` = on solve, don't terminate the HTB machine (keep the box up) |
 | `VPN_AUTOFIX` | 0 | `1` = if pre-flight finds the wrong VPN server (HTB_OVPN mismatch, or target routes but is host-unreachable), auto-reconnect to `HTB_OVPN` |
 | `CYBER_MAX_RETRIES` | 10 | relaunches allowed when the agent is cyber-safeguard-flagged before the loop stops (content flags re-trip, so this caps churn) |
+| `RC2_USAGE_BACKOFF` | 1800 | on a usage/token-limit stop (not a crash), seconds to back off before resuming from disk; wakes early on `logs/.stop` |
+| `RC2_USAGE_MAX_WAITS` | 12 | max usage-limit backoffs before the loop stops (does **not** consume `MAX_RESTARTS`) |
+| `RC2_USAGE_LIMIT_RE` | (built-in) | override the regex that recognizes a usage/rate/overload-limit stop in the session log |
 | `CYBER_FALLBACK_MODEL` | — | on a cyber-safeguard flag, switch the orchestrator to this (less-restricted) model for the next session |
 | `OVERSEE_FALLBACK_MODEL` | — | model the supervisor retries a cyber-flagged review with (one retry); `scripts/oversee.sh` only |
 | `OVERSEE_INTERVAL` | 600 | supervisor review cadence (s) |
@@ -175,7 +176,7 @@ load `.env` (incl. guard defaults) → refresh HTB token from newest HAR if stal
 (wait up to 15×3 min) → VPN pre-flight (`openvpn --daemon` if `HTB_OVPN` set) → scaffold `runs/<slug>/`
 (seed the 3 living files + `ledger.json` + `logs/accounting.json` + the guard secret) → read HTB
 owned-flag status (sets live/defer flag-submit mode) → start the flag auto-submitter, the `status.md`
-writer, the supervisor + the epistemic auditor (each a herdr pane or tmux session), and — when any guard
+writer, the supervisor + the epistemic auditor (each a tmux session), and — when any guard
 layer is enabled — the sameness-judge
 watcher → build the system prompt from `doctrine/*.md` → run `claude -p` in the resilient loop → on exit
 write `writeup.md` + `failure_analysis.*` and a final `status.md`. **On a solve** (both flags) it also
@@ -409,20 +410,17 @@ writer, sameness-judge watcher, `rc2_claude_oneshot` out-of-band model runner, o
 
 ---
 
-## 8. tmux & herdr
+## 8. tmux
 
-Each is used per its need.
+tmux is the only session layer (zero-dependency, always present) — all in-box sessions: `<tmux_base>_main`
+(long/progress tools you watch), the agent's own interactive sessions it drives with `send-keys` (reverse
+shells via `pwncat-cs`, `msfconsole`, handlers, the `<tmux_base>_dbg` gdb session), and the two reviewer
+sidecars `<tmux_base>_oversee` / `<tmux_base>_auditor`. `tmux_base` is `rc2_<slug>`.
 
-- **tmux** (zero-dependency, default) — all in-box sessions: `<tmux_base>_main` (long/progress
-  tools you watch), the agent's own interactive sessions it drives with `send-keys` (reverse
-  shells, `msfconsole`, handlers, the `<tmux_base>_dbg` gdb session), and `<tmux_base>_oversee`
-  (supervisor, when not inside herdr). `tmux_base` is `rc2_<slug>`.
-- **herdr** (optional outer/operator runtime) — run `./hunt` inside a herdr pane and it becomes
-  herdr-aware: oversee goes in a **sibling pane** (`herdr pane split` + `pane run`) instead of a
-  tmux session, giving a persistent, status-aware, disconnect-surviving workspace, and
-  multi-machine over SSH. Start with `herdr` (TUI) or `herdr server` (headless), then `./hunt` in
-  a pane. Its in-process agent coordination overlaps Claude Code sub-agents, so it's not used for
-  that.
+> **herdr was removed.** It was an optional outer runtime that only placed the reviewer sidecars in
+> sibling panes — something tmux sessions do just as well — and its in-process agent coordination
+> overlapped Claude Code's native sub-agents, so it was never used for that. Dropping it removes a moving
+> part; `rc2_launch_sidecar`/`rc2_stop_sidecar` are now tmux-only.
 - **VPN** is a separate `openvpn --daemon` (shared infra, left up across hunts) — not a terminal
   session.
 
@@ -520,7 +518,7 @@ drive the real service with the exploit `exploit-dev` builds.
 | no route to target | set `HTB_OVPN` in `.env`, or `sudo openvpn <file> &` |
 | target routes but unreachable (gateway says host-unreachable) | wrong VPN server/region — the machine lives on another server; connect the `.ovpn` where it's spawned (your HTB panel), or `VPN_AUTOFIX=1 ./hunt …` with `HTB_OVPN` set. Pre-flight now warns on this |
 | reviewer/agent "cyber-flagged" (safeguards) | a fresh session won't clear a content-based flag; set a `CYBER_FALLBACK_MODEL` / `OVERSEE_FALLBACK_MODEL` (less-restricted model) or apply to the Cyber Verification Program. oversee no longer writes a `supervisor.md` tick on a failed review; hunt caps cyber relaunches at `CYBER_MAX_RETRIES` |
-| agent keeps restarting | it's crashing/overflowing; check `logs/session_*.log`; `NO_RESTART=1` to stop the loop |
+| agent keeps restarting | it's crashing/overflowing; check `logs/session_*.log`; `NO_RESTART=1` to stop the loop. (A usage/token-limit stop is handled separately — it backs off and resumes without burning restarts; see `RC2_USAGE_*`.) |
 | agent "spinning" / waiting on a dead box | the box likely reset/respawned to a new IP. `rc2_health_watcher` writes `target_health.md` (UP/DOWN/MOVED) and, on a new respawn IP, rewrites `target.env` + flags **TARGET MOVED**. Confirm the live IP with `scripts/machine.sh ip <name>`; a relaunch re-resolves it. (If the health watcher didn't run, check `logs/.stop` wasn't stale — `hunt` now clears it at launch.) |
 | attempt hangs / looks paused | a long attempt is silent in the main terminal by design; the watchdog emits a `[hunt] attempt N live …` heartbeat and kills a cyber-spin (`RC2_CYBER_SPIN`) or no-output wedge (`RC2_HANG_KILL`). Watch `scripts/watch.sh` for the real activity |
 | supervisor burning tokens | `NO_OVERSEE=1 ./hunt …` or raise `OVERSEE_INTERVAL` |

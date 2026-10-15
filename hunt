@@ -110,8 +110,8 @@ if { rc2_guard_core_on || [ "${RC2_GUARD_WATCH:-0}" = "1" ]; } && [ "${NO_GUARD_
   echo "[guard] sameness watcher on (judge=${GUARD_JUDGE_MODEL:-sonnet}, every ${GUARD_WATCH_INTERVAL:-180}s, stall=${RC2_STALL:-12})"
 fi
 
-# supervisor/critic alongside the hunt: a herdr sibling pane when running inside herdr, else a
-# tmux session (default). It reads the logs + living files and writes supervisor.md on drift.
+# supervisor/critic alongside the hunt in a <tmux_base>_oversee tmux session. It reads the logs +
+# living files and writes supervisor.md on drift.
 rc2_launch_oversee "$RUNDIR"
 # epistemic auditor alongside the hunt (same placement policy as oversee): a periodic independent opus
 # reader of the raw logs that catches a vector abandoned on INCONCLUSIVE evidence and pushes the solver
@@ -128,8 +128,8 @@ cleanup() {
   [ -n "${HEALTH_PID:-}" ] && kill "$HEALTH_PID" 2>/dev/null || true
   [ -n "${GUARD_WATCH_PID:-}" ] && kill "$GUARD_WATCH_PID" 2>/dev/null || true
   rc2_write_status "$RUNDIR" 2>/dev/null || true                   # final snapshot
-  rc2_stop_oversee || true                                         # stop supervisor (herdr pane or tmux)
-  rc2_stop_auditor || true                                         # stop epistemic auditor (herdr pane or tmux)
+  rc2_stop_oversee || true                                         # stop supervisor (tmux session)
+  rc2_stop_auditor || true                                         # stop epistemic auditor (tmux session)
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
