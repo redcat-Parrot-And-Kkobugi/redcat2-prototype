@@ -658,7 +658,11 @@ rc2_launch_sidecar() {
 # rc2_stop_sidecar <label> — stop whatever rc2_launch_sidecar <label> started (herdr pane or tmux session).
 rc2_stop_sidecar() {
   local label="$1" up; up="$(printf '%s' "$label" | tr 'a-z' 'A-Z')"
-  local var="HERDR_${up}_PANE" pane="${!var:-}"
+  # NB: split across two `local` statements — bash does NOT see `var` within the SAME `local` that
+  # declares it, so `local var=.. pane="${!var:-}"` raises `invalid indirect expansion` (SC2318) and,
+  # under `set -e`, aborts cleanup mid-way. See the bash same-local gotcha.
+  local var="HERDR_${up}_PANE"
+  local pane="${!var:-}"
   if [ -n "$pane" ]; then herdr pane close "$pane" 2>/dev/null || true
   else tmux kill-session -t "${tmux_base}_${label}" 2>/dev/null || true; fi
 }
