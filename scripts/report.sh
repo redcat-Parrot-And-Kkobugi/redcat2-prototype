@@ -22,7 +22,7 @@ now=$(date +%s); start="${start_epoch:-$now}"; wall=$(( now - start ))
 fmt(){ local s=$1; printf '%dh%02dm%02ds' $((s/3600)) $(((s%3600)/60)) $((s%60)); }
 
 # ── tool-call metrics ───────────────────────────────────────────────────────────
-calls=$(rc2_tl_count "$J"); bash_calls=$(rc2_tl_count "$J" Bash); task_calls=$(rc2_tl_count "$J" Task)
+calls=$(rc2_tl_count "$J"); bash_calls=$(rc2_tl_count "$J" Bash); task_calls=$(rc2_tl_count "$J" Agent)   # delegations log as tool "Agent", not "Task"
 dur_ms=$(rc2_tl_dur_ms "$J"); first_ts=$(rc2_tl_first_ts "$J"); last_ts=$(rc2_tl_last_ts "$J")
 calls=$(printf '%s' "${calls:-0}" | tr -dc '0-9'); calls=$((10#${calls:-0}))
 bash_calls=$(printf '%s' "${bash_calls:-0}" | tr -dc '0-9'); bash_calls=$((10#${bash_calls:-0}))
@@ -69,7 +69,7 @@ block="$(cat <<EOF
 | tool activity span | ${first_ts:-?} → ${last_ts:-?} |
 | total tool calls | ${calls:-0} |
 | shell commands | ${bash_calls:-0} |
-| sub-agent delegations (Task) | ${task_calls:-0} |
+| sub-agent delegations (Agent) | ${task_calls:-0} |
 | summed command time | $(( dur_ms / 1000 ))s |
 | tokens (best-effort) | ${tokens} |
 | cost (best-effort) | ${cost} |

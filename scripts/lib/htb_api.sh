@@ -22,7 +22,7 @@ _htb_need_token() {
 htb_req() {
   local method="$1" ep="$2" body="${3:-}"
   _htb_need_token || return 1
-  local args=(-sS -X "$method"
+  local args=(-sS --max-time 180 -X "$method"
     -H "Authorization: Bearer ${HTB_TOKEN}"
     -H "Accept: application/json, text/plain, */*"
     -H "User-Agent: ${HTB_UA}"
