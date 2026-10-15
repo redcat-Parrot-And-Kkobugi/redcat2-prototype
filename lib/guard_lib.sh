@@ -23,11 +23,24 @@ rc2_json_update() {
   local f="$1"; shift
   local filter="$1"; shift
   [ -s "$f" ] || return 0
-  if jq "$@" "$filter" "$f" > "$f.tmp" 2>/dev/null && [ -s "$f.tmp" ]; then
-    mv "$f.tmp" "$f" 2>/dev/null
+  # Concurrency: the per-call hook (one process EACH tool call) + guard/status/health loops all update
+  # the same files (accounting.json). A FIXED tmp name let two writers clobber one tmp (corrupt/empty
+  # reads), and an unlocked read-modify-write lost increments (counter undercount). Fix = a PRIVATE tmp
+  # (pid+random, so mv is always atomic and a reader never sees a half-written file) + an flock that
+  # SERIALIZES the read-modify-write (so each updater reads the latest and no increment is lost).
+  # Fail-open throughout: a missing flock, a lock timeout, or any jq/mv failure skips the update and
+  # returns 0 — it never blocks or crashes the hunt.
+  local tmp="${f}.tmp.$$.${RANDOM}"
+  _rc2_ju_apply() {   # the atomic bit: jq over the CURRENT file -> private tmp -> atomic mv
+    if jq "$@" "$filter" "$f" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then mv "$tmp" "$f" 2>/dev/null
+    else rm -f "$tmp" 2>/dev/null; fi
+  }
+  if command -v flock >/dev/null 2>&1; then
+    ( flock -w 5 9 || exit 0; _rc2_ju_apply "$@" ) 9>"${f}.lock" || true
   else
-    rm -f "$f.tmp" 2>/dev/null
+    _rc2_ju_apply "$@"   # no flock: private tmp still prevents torn reads; RMW may still race
   fi
+  unset -f _rc2_ju_apply 2>/dev/null || true
   return 0
 }
 
