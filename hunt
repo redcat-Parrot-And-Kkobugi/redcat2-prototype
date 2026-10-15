@@ -128,8 +128,8 @@ cleanup() {
   [ -n "${HEALTH_PID:-}" ] && kill "$HEALTH_PID" 2>/dev/null || true
   [ -n "${GUARD_WATCH_PID:-}" ] && kill "$GUARD_WATCH_PID" 2>/dev/null || true
   rc2_write_status "$RUNDIR" 2>/dev/null || true                   # final snapshot
-  rc2_stop_oversee                                                 # stop supervisor (herdr pane or tmux)
-  rc2_stop_auditor                                                 # stop epistemic auditor (herdr pane or tmux)
+  rc2_stop_oversee || true                                         # stop supervisor (herdr pane or tmux)
+  rc2_stop_auditor || true                                         # stop epistemic auditor (herdr pane or tmux)
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
