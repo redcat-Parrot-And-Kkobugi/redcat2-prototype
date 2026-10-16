@@ -114,6 +114,7 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `RC2_UNTESTABLE_MAX` | 4 | materially-different inconclusive attempts on one vector before it is parked `untestable` (not refuted) |
 | `RC2_SURFACE_TIER2` | 0 | `1` = enable the opt-in Tier-2 inferred-surface labeler (`scripts/surface_label.sh`); Tier-1 (the per-call hook) is always on |
 | `RC2_SURFACE_TIER2_MODEL` | `haiku` | model for Tier-2 inferred labels (`sonnet` for richer judgment) |
+| `RC2_SURFACES_CONF` | `reference/surfaces.conf` | path to the optional data-driven surface-label overlay (`<regex>⇥<label>` lines) added on top of the built-in Tier-1 pack |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
 | `IP_WAIT_TRIES` | 15 | spawn/IP poll attempts |
