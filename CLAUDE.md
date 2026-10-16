@@ -164,7 +164,9 @@ tmux is zero-dependency and lives in the agent's shell env, so everything runs o
   per-surface effort + log outcomes[conclusive vs inconclusive] + held assets → the stuck-time
   enumeration-gap + combination pass the orchestrator runs); `surface_label.sh` (**opt-in** Tier-2
   inferred-surface labeler, `RC2_SURFACE_TIER2=1`, prompt `SURFACE_LABEL.md` → `logs/surfaces_inferred.json`,
-  folded into `gaps.sh`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
+  folded into `gaps.sh`; the always-on Tier-1 hook labeler `_hook_surface` is itself extensible via
+  `reference/surfaces.conf` [`<regex>⇥<label>`, `RC2_SURFACES_CONF`] on top of its built-in pack + structural
+  tool@target fallback); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
   `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `guard.sh` (set the
   guard's *live* level or `show` floor/live/effective — the guard's operator/oversee channel, §4a of

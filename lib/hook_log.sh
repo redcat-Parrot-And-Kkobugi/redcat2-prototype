@@ -110,6 +110,16 @@ _hook_surface() {
   printf '%s' "$c" | grep -qE 'pickle|yaml\.load|unserialize|objectinputstream|marshal|__reduce__' && L="$L deserialize"
   printf '%s' "$c" | grep -qE 'multipart/form-data|filename=|(^| )-f [^ -]' && L="$L upload"
   printf '%s' "$c" | grep -qE 'openssl|(^|[^a-z])jwt|(^| )gpg |\.pem( |$)|aes-|(^| )rsa ' && L="$L crypto"
+  # ── data-driven overlay (optional): reference/surfaces.conf lines "<regex><TAB><label>" add labels the
+  #    built-in pack doesn't cover, no code edit. The hybrid's data half; structural fallback still applies. ──
+  local _conf="${RC2_SURFACES_CONF:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/reference/surfaces.conf}"
+  if [ -f "$_conf" ]; then
+    local _re _lab
+    while IFS=$'\t' read -r _re _lab; do
+      case "$_re" in ''|'#'*) continue ;; esac
+      [ -n "$_lab" ] && printf '%s' "$c" | grep -qE -- "$_re" 2>/dev/null && L="$L $_lab"
+    done < "$_conf"
+  fi
   # ── target qualifier: cloud subcommand (service), else url/ip/host/port ──
   if printf '%s' " $L " | grep -q ' cloud '; then
     tgt="$(printf '%s' "$c" | sed "s/[\"']/ /g" | awk '{ for(i=1;i<=NF;i++) if($i ~ /^(aws|gcloud|az|kubectl|oc|doctl)$/){ skip=0; for(j=i+1;j<=NF;j++){ if($j ~ /^--?(region|profile|output|endpoint|endpoint-url|context|namespace|cluster|n|o|p|r)$/){skip=1;continue} if(skip){skip=0;continue} if($j ~ /^-/){continue} if($j ~ /^[a-z][a-z0-9-]*$/){print $j; exit} } } }')"

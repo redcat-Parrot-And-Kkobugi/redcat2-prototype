@@ -148,6 +148,7 @@ redcat2/
     check_token.sh           validate the token against the live API
   reference/
     surface-signals.md       observation->environment->direction; consulted when ports are thin (not a playbook)
+    surfaces.conf            optional data-driven extra surface labels for _hook_surface (operator/box-extensible)
   triage/                    per-run thought-vs-execution verdicts (triage.sh; tracked, updated each run)
   har/                       drop HTB devtools HARs here        (gitignored)
   runs/<slug>/               per-box workspace, created at run   (gitignored)

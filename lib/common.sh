@@ -50,9 +50,14 @@ rc2_both_accepted() {
 # IP-only mode (no API/token) has no submission channel, so presence is the only available signal.
 rc2_solved() {
   local rundir="${1:-.}"
+  local mid="${machine_id:-}"
   rc2_both_flags "$rundir" || return 1
-  { [ "${RC2_HTB:-0}" = "1" ] && [ -n "${HTB_TOKEN:-}" ]; } || return 0   # IP-only: present == solved
-  rc2_both_accepted "$rundir"
+  # Mode is decided by whether THIS target is a real HTB machine (machine_id set at resolve), NOT by whether
+  # a token happens to sit in .env — the old `RC2_HTB && HTB_TOKEN` test wrongly sent an IP target with a
+  # leftover token down the "require accepted" path, where submit is a no-op, so it never read solved.
+  [ -n "$mid" ] || mid="$( . "$rundir/target.env" 2>/dev/null; printf '%s' "${machine_id:-}" )"
+  [ -n "$mid" ] || return 0            # no machine_id = IP-only target (no submission channel): presence == solved
+  rc2_both_accepted "$rundir"          # HTB machine: require both flags ACCEPTED by the lab
 }
 
 # rc2_resolve_rundir <arg> — needs $ROOT. Echoes a run dir:
