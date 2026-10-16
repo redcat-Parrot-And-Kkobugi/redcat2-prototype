@@ -133,6 +133,9 @@ redcat2/
     auditor.sh               epistemic/conclusiveness auditor loop -> auditor.md (auto; pushes via the hook)
     report.sh                writeup.md: narrative (banner+chain+facts) + metrics   (auto on exit)
     analyze_run.sh           failure classifier -> failure_analysis.md/.json  (auto on exit)
+    triage.sh                per-run "thought vs execution" verdict + cross-run rollup (stdout)
+    gaps.sh                  read-only §5 digest: surface effort + log outcomes + held assets (stdout)
+    surface_label.sh         OPT-IN Tier-2 inferred surface labels (RC2_SURFACE_TIER2=1)
     rag.sh                   cross-run memory: grep your own past runs (+ reference/)
     machine.sh               HTB API util: info|ip|spawn|active|stop|reset|submit <name>
     burp.sh                  optional Burp-over-MCP (up|status|down|restart)

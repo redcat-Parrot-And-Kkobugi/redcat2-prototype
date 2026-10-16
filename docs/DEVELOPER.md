@@ -338,6 +338,7 @@ Four mechanisms tie the guard to the solver's reasoning:
 | `AUDITOR_INTERVAL` / `AUDITOR_MODEL` | `420` / `opus` | epistemic-auditor cadence / model (`NO_AUDITOR=1` disables) |
 | `AUDITOR_NUDGE_ESCALATE` | `3` | hook push warns N× for a new `auditor.md` finding, then exit-2 blocks until read |
 | `RC2_UNTESTABLE_MAX` | `4` | materially-different inconclusive attempts on one vector before it is parked `untestable` (not refuted) |
+| `RC2_SURFACE_TIER2` / `RC2_SURFACE_TIER2_MODEL` | `0` / `haiku` | opt-in Tier-2 inferred-surface labeler (`surface_label.sh`); Tier-1 hook always on |
 
 All calibration defaults live in **one place** - `lib/env.sh`. `RC2_GUARD`/`RC2_GATE`/`RC2_GUARD_WATCH`
 are read at point of use (operator intent, not defaults).
@@ -419,7 +420,7 @@ Convention worth preserving: **signals the hook must read fast and without `jq` 
                            rc2_claude_oneshot, rc2_negatives, sameness judge + watcher +
                            contradiction signal + commit_freeze, oversee + auditor launch
     hook_log.sh            per-call hook: force-log + anti-DoS + P1 accounting/guard + auditor push (sources guard_lib)
-  scripts/                 watch  agents  oversee  auditor  guard  report  analyze_run  rag  machine  burp  ...
+  scripts/                 watch  agents  oversee  auditor  guard  report  analyze_run  triage  gaps  surface_label  rag  machine  burp  ...
   doctrine/00..60          the brain (system prompt)
   .claude/agents/          researcher  recon-analyst  exploit-dev  verifier  reverser
   OVERSEER.md JUDGE.md SURRENDER.md AUDITOR.md   out-of-band reviewer prompts (NOT in the solver's prompt)
