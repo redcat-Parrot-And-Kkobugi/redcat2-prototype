@@ -133,6 +133,9 @@ cleanup() {
   # retrospective: metrics → writeup.md, and a failure classification (both best-effort)
   "$RC2_ROOT/scripts/report.sh"      "$RUNDIR" 2>/dev/null || true
   "$RC2_ROOT/scripts/analyze_run.sh" "$RUNDIR" 2>/dev/null || true
+  # §4 triage: fold this run's fresh failure_analysis.json into a thought-vs-execution tag -> triage/<slug>.md
+  # (tracked, updated each run). MUST run AFTER analyze_run.sh (it reads its output). Quiet + fail-open.
+  "$RC2_ROOT/scripts/triage.sh"      "$(basename "$RUNDIR")" >/dev/null 2>&1 || true
   # SOLVED = both flags present AND (API mode) both ACCEPTED by the lab — only then stop the HTB machine
   # + tear down tmux. A captured-but-rejected/stale flag is NOT solved, so the box is kept for resume.
   if rc2_solved "$RUNDIR"; then
