@@ -26,6 +26,9 @@ _triage_bucket() {
   outcome="$(jq -r '.outcome // ""' "$fa" 2>/dev/null)"
   case "$outcome" in solved|owned|success) solved=yes ;; esac
   [ "$solved" = yes ] && { printf 'solved\toutcome=%s' "${outcome:-flags}"; return; }
+  # stub guard: a 0-step archive (no tools.jsonl) has no real signal — don't mis-tag it thought/execution.
+  local steps; steps="$(jq -r '.steps // 0' "$fa" 2>/dev/null)"
+  { [ "${steps:-0}" = "0" ] || [ ! -s "$1/logs/tools.jsonl" ]; } && { printf 'empty\t(stub — %s steps, no real run)' "${steps:-0}"; return; }
   # dominant failure category: primary_category if present, else argmax of category_scores
   cat="$(jq -r '.failure_analysis.primary_category // ""' "$fa" 2>/dev/null)"
   [ -n "$cat" ] || cat="$(jq -r '(.category_scores // {}) | to_entries | max_by(.value) | .key // ""' "$fa" 2>/dev/null)"
