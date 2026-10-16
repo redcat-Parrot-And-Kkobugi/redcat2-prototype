@@ -46,6 +46,14 @@ rc2_load_env() {
   : "${RC2_UNTESTABLE_MAX:=4}"        # materially-different INCONCLUSIVE attempts on one vector before it is PARKED (untestable), not refuted
   export AUDITOR_INTERVAL AUDITOR_MODEL AUDITOR_NUDGE_ESCALATE RC2_UNTESTABLE_MAX
 
+  # ── surface labeling (A3) ──────────────────────────────────────────────────────
+  # Tier-1 (the per-call hook, _hook_surface) is always on, deterministic, multi-label. Tier-2 is the
+  # OPT-IN out-of-band model pass that adds INFERRED labels (privesc-candidate, auth-bypass-surface, …)
+  # the patterns can't — off by default; enable to enrich the §5 gap/combination digest.
+  : "${RC2_SURFACE_TIER2:=0}"             # 1 = enable the Tier-2 inferred-label pass (scripts/surface_label.sh)
+  : "${RC2_SURFACE_TIER2_MODEL:=haiku}"   # model for Tier-2 (haiku = cheap distill; sonnet = richer judgment)
+  export RC2_SURFACE_TIER2 RC2_SURFACE_TIER2_MODEL
+
   # ── prompt-cache / relaunch efficiency ────────────────────────────────────────
   # The real lever for "don't re-pay the whole context on every relaunch" is SERVER-SIDE prompt caching —
   # there is NO local prompt cache (verified: code.claude.com/docs/en/prompt-caching). The doctrine system

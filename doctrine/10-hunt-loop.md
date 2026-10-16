@@ -248,6 +248,22 @@ built, one proven rung at a time. Re-score the board.
   `worldmodel.md` top to bottom and ask: *what surface or fact am I not using? what would
   someone who just arrived look at first?* The answer is often a seam you walked past while
   tunnelling.
+- **When genuinely stuck — the enumeration-gap + combination pass (not brainstorming).** Insane
+  boxes are usually lost to **incomplete enumeration or un-combined facts**, not to a missing flash of
+  creativity — so when a vector stalls, run `scripts/gaps.sh` (read-only: per-surface *effort*, the
+  *log outcomes* that say whether attempts even reached a verdict, and the assets you hold) and do two
+  passes, **both grounded ONLY in observed facts — cite the specific `worldmodel`/digest line for each
+  item, invent nothing:**
+  - **(A) enumeration gap** — a surface with little/no effort and no facts yet is a place you *haven't
+    looked*; enumerate it. (A surface whose attempts were **inconclusive** in the log is NOT a gap —
+    that is re-angle on the live vector per *conclusiveness* above, not new enumeration.)
+  - **(B) combination** — assets you already hold but have not cross-applied: cred X against service Y,
+    file Z with technique W, a credential reused on a second service. The chain is often two facts you
+    own that you never tried together.
+  You (the orchestrator) run this yourself — you hold the world model and reason best over it; if you
+  delegate the *distillation*, hand a sub-agent only verified facts and forbid outside assumptions. This
+  is exhaustive enumeration + combination, the way the box is actually meant to be solved — never a
+  free-association tangent.
 - **Protect your context window — it is the scarcest resource, and overflowing it turns a
   solvable box into endless relaunches.** Bulk-output or self-contained work (broad enumeration,
   parsing walls of output, web research, exploit drafting, reversing, verification) is
