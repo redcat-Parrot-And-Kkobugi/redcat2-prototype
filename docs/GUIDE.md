@@ -112,6 +112,8 @@ Log in to `app.hackthebox.com`, open DevTools → Network → **Save all as HAR*
 | `AUDITOR_FALLBACK_MODEL` | — | model the auditor retries a cyber-flagged review with (one retry); `scripts/auditor.sh` only |
 | `AUDITOR_NUDGE_ESCALATE` | 3 | hook pushes (warn) this many times for a new `auditor.md` finding, then hard-blocks (exit 2) until the solver reads it |
 | `RC2_UNTESTABLE_MAX` | 4 | materially-different inconclusive attempts on one vector before it is parked `untestable` (not refuted) |
+| `RC2_SURFACE_TIER2` | 0 | `1` = enable the opt-in Tier-2 inferred-surface labeler (`scripts/surface_label.sh`); Tier-1 (the per-call hook) is always on |
+| `RC2_SURFACE_TIER2_MODEL` | `haiku` | model for Tier-2 inferred labels (`sonnet` for richer judgment) |
 | `STATUS_INTERVAL` | 600 | `status.md` snapshot cadence (s) |
 | `FLAG_INTERVAL` | 300 | flag auto-submit watcher poll cadence (s) |
 | `IP_WAIT_TRIES` | 15 | spawn/IP poll attempts |
@@ -383,6 +385,9 @@ Run from the repo root. Most take a run slug/name/IP, defaulting to the newest r
 | `scripts/auditor.sh` | `scripts/auditor.sh <slug>` | epistemic/conclusiveness auditor loop → `auditor.md` on a misclassified (inconclusive-as-refuted) negative; the hook pushes the solver to read it. `AUDITOR_INTERVAL`, `AUDITOR_MODEL`, `ONESHOT=1`. Auto-started by `hunt` |
 | `scripts/report.sh` | `scripts/report.sh <rundir>` | metrics → `writeup.md` (wall time, tool/Task counts, per-phase). Auto on exit |
 | `scripts/analyze_run.sh` | `scripts/analyze_run.sh [rundir|name]` | failure classifier → `failure_analysis.md/.json`. Auto on exit |
+| `scripts/triage.sh` | `scripts/triage.sh [name]` | §4 per-run retrospective: folds `failure_analysis.json` into a **thought-vs-execution** verdict; no arg → cross-run rollup. Prints to **stdout** (no file). `BAKS=1` includes archived runs |
+| `scripts/gaps.sh` | `scripts/gaps.sh [name]` | §5 read-only digest for the stuck-time gap+combination pass: per-surface effort + **log outcomes (conclusive vs inconclusive)** + held assets. Prints to **stdout**. Folds in Tier-2 labels when present |
+| `scripts/surface_label.sh` | `RC2_SURFACE_TIER2=1 scripts/surface_label.sh [name]` | **opt-in** Tier-2 inferred surface labeler (prompt `SURFACE_LABEL.md`, haiku default) → `logs/surfaces_inferred.json`, folded into `gaps.sh`. `RC2_SURFACE_TIER2_MODEL=sonnet` for richer judgment |
 | `scripts/rag.sh` | `scripts/rag.sh [-p] <query>` | cross-run memory: grep your own past runs. `-p` also searches `reference/` + PayloadsAllTheThings/GTFOBins. `SCOPE=runs/<slug>` to narrow |
 | `scripts/machine.sh` | `scripts/machine.sh <cmd> <name|id> [flag]` | HTB API util: `info` / `ip` / `spawn` / `active` / `stop` / `reset` / `submit`. Names resolve to ids |
 | `scripts/guard.sh` | `scripts/guard.sh <name> <off\|warn\|block\|show> ["reason"]` | set the **live** guard level (oversee/operator channel; §4a) or `show` floor/live/effective. Tagged so the solver can't forge it |
