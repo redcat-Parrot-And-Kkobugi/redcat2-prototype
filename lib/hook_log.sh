@@ -71,30 +71,48 @@ rc2_fp() {
 _hook_surface() {
   local c; c="$(printf '%s' "$1" | tr 'A-Z' 'a-z')"
   [ -z "$c" ] && { echo other; return; }
-  local fam=other tgt=""
-  if   printf '%s' "$c" | grep -qE 'nmap|masscan|rustscan|gobuster|ffuf|feroxbuster|nikto|nuclei|wpscan|dirb|whatweb'; then fam=scan
-  elif printf '%s' "$c" | grep -qE 'smbclient|smbmap|crackmapexec|nxc|netexec|rpcclient|impacket|psexec|wmiexec|smbexec'; then fam=smb
-  elif printf '%s' "$c" | grep -qE 'ldapsearch|bloodhound|kerbrute|getuserspns|secretsdump|evil-winrm|getnpusers|certipy|gettgt'; then fam=ad
-  elif printf '%s' "$c" | grep -qE 'mysql|psql|mariadb|mssql|sqsh|sqlcmd|mongo|redis-cli|sqlmap'; then fam=db
-  elif printf '%s' "$c" | grep -qE 'hydra|medusa|(^|[^a-z])john|hashcat|crackmap'; then fam=cred
-  elif printf '%s' "$c" | grep -qE '(^|[^a-z])(aws|gcloud|az|kubectl|oc|doctl)([^a-z]|$)|boto3'; then fam=cloud
-  elif printf '%s' "$c" | grep -qE '(^|[^a-z])ssh|sshpass|scp '; then fam=ssh
-  elif printf '%s' "$c" | grep -qE 'curl|wget|(^|[^a-z])http|(^|[^a-z])nc |ncat|websocat'; then fam=web
-  elif printf '%s' "$c" | grep -qE 'python|ruby|perl|(^|[^a-z])php |go run|gcc|(^|[^a-z])\./'; then fam=exploit
-  fi
-  if [ "$fam" = cloud ]; then
-    # service/resource = first BARE-WORD token after the cloud CLI (skips --flags and their url/kv values);
-    # quotes -> spaces first so it also works inside tmux/ssh-wrapped commands.
-    tgt="$(printf '%s' "$c" | sed "s/[\"']/ /g" | awk '
-      { for(i=1;i<=NF;i++) if($i ~ /^(aws|gcloud|az|kubectl|oc|doctl)$/){
-          skip=0
-          for(j=i+1;j<=NF;j++){
-            if($j ~ /^--?(region|profile|output|endpoint|endpoint-url|context|namespace|cluster|n|o|p|r)$/){ skip=1; continue }  # value-taking global flag
-            if(skip){ skip=0; continue }                                                                                        # its value
-            if($j ~ /^-/){ continue }                                                                                           # a bare flag
-            if($j ~ /^[a-z][a-z0-9-]*$/){ print $j; exit }                                                                      # first real service/resource word
-          }
-        } }')"
+  local L="" tgt=""
+  # Independent matches (NOT elif): an action collects EVERY label that fits = a multi-DIMENSIONAL
+  # surface (service it talks to · phase · observable technique). This is still a hardcoded, domain-general
+  # catalog (no box/product names), but multi-label + a tool-name fallback (never a bare "other") keep the
+  # signal alive on any box. Inferred/semantic labels (privesc-candidate, …) are NOT here — they are the
+  # opt-in out-of-band Tier-2 labeler (scripts/surface_label.sh).
+  # ── service (what it talks to) ──
+  printf '%s' "$c" | grep -qE 'curl|wget|(^|[^a-z])http|(^|[^a-z])nc |ncat|websocat|nikto|whatweb|wpscan|gobuster|ffuf|feroxbuster' && L="$L web"
+  printf '%s' "$c" | grep -qE 'smbclient|smbmap|crackmapexec|(^|[^a-z])nxc |netexec|rpcclient|impacket|psexec|wmiexec|smbexec|enum4linux|:445|\\\\[0-9a-z]' && L="$L smb"
+  printf '%s' "$c" | grep -qE 'ldapsearch|bloodhound|ldapdomaindump|ldap://|(^|[^a-z])dc=[a-z]' && L="$L ad"
+  printf '%s' "$c" | grep -qE 'kerbrute|getuserspns|getnpusers|gettgt|getst|(^|[^a-z])kinit|krb5|\.kirbi|\.ccache' && L="$L kerberos"
+  printf '%s' "$c" | grep -qE 'mysql|psql|mariadb|mssql|sqsh|sqlcmd|(^|[^a-z])mongo|sqlmap|jdbc:|:3306|:5432|:1433|:27017' && L="$L db"
+  printf '%s' "$c" | grep -qE 'redis-cli|:6379' && L="$L redis"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])ssh |sshpass|(^|[^a-z])scp |ssh-keygen|authorized_keys|id_rsa|id_ed25519' && L="$L ssh"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])ftp |lftp|:21( |$)' && L="$L ftp"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])dig |nslookup|dnsenum|dnsrecon|:53( |$)' && L="$L dns"
+  printf '%s' "$c" | grep -qE 'snmpwalk|snmp-check|onesixtyone|:161' && L="$L snmp"
+  printf '%s' "$c" | grep -qE 'showmount|(^|[^a-z])nfs|:2049' && L="$L nfs"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])smtp|:25( |$)|:587|swaks' && L="$L mail"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])aws |gcloud|(^|[^a-z])az |kubectl|(^|[^a-z])oc |doctl|boto3|localstack|:4566' && L="$L cloud"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])docker |containerd|(^|[^a-z])runc|/var/run/docker|kubelet|/proc/1/|capsh' && L="$L container"
+  # ── action / phase ──
+  printf '%s' "$c" | grep -qE 'nmap|masscan|rustscan|-p-|--top-ports|(^|[^a-z])-sv|(^|[^a-z])-sc' && L="$L scan"
+  printf '%s' "$c" | grep -qE 'gobuster|ffuf|feroxbuster|dirb|dirsearch|wfuzz|(^|[^a-z])fuzz|seclists|wordlist' && L="$L enum"
+  printf '%s' "$c" | grep -qE 'hydra|medusa|patator|(^|[^a-z])-P [^ ]|(^|[^a-z])brute' && L="$L brute"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])john|hashcat|hashid|--wordlist' && L="$L crack"
+  printf '%s' "$c" | grep -qE '/dev/tcp/|bash -i|(^|[^a-z])nc .* -e|pwncat|msfconsole|meterpreter|reverse.?shell|/bin/sh -i|setsid' && L="$L shell"
+  printf '%s' "$c" | grep -qE 'chisel|ligolo|(^|[^a-z])socat|proxychains|port.?forward|(^|[^a-z])-L [0-9]' && L="$L pivot"
+  printf '%s' "$c" | grep -qE '(^|[^a-z])gdb|objdump|readelf|(^|[^a-z])strings |ghidra|radare|(^|[^a-z])r2 |pwndbg' && L="$L reversing"
+  # ── technique hint (observable from the command text only) ──
+  printf '%s' "$c" | grep -qE 'login|/auth|signin|passwd|password=|token=|cookie=|authorization|(^|[^a-z])ntlm' && L="$L auth"
+  printf '%s' "$c" | grep -qE 'sqlmap|union[ +]select|1=1|information_schema|xp_cmdshell|sleep\(|benchmark\(' && L="$L injection"
+  printf '%s' "$c" | grep -qE '\.\./|\.\.%2f|%2e%2e|/etc/passwd|/proc/self|file://' && L="$L traversal"
+  printf '%s' "$c" | grep -qE 'gopher://|169\.254|/metadata|(^|[^a-z])ssrf' && L="$L ssrf"
+  printf '%s' "$c" | grep -qE '\{\{|\$\{|<%=|freemarker|jinja|twig|velocity' && L="$L template"
+  printf '%s' "$c" | grep -qE '<!entity|<!doctype|(^|[^a-z])xxe' && L="$L xxe"
+  printf '%s' "$c" | grep -qE 'pickle|yaml\.load|unserialize|objectinputstream|marshal|__reduce__' && L="$L deserialize"
+  printf '%s' "$c" | grep -qE 'multipart/form-data|filename=|(^| )-f [^ -]' && L="$L upload"
+  printf '%s' "$c" | grep -qE 'openssl|(^|[^a-z])jwt|(^| )gpg |\.pem( |$)|aes-|(^| )rsa ' && L="$L crypto"
+  # ── target qualifier: cloud subcommand (service), else url/ip/host/port ──
+  if printf '%s' " $L " | grep -q ' cloud '; then
+    tgt="$(printf '%s' "$c" | sed "s/[\"']/ /g" | awk '{ for(i=1;i<=NF;i++) if($i ~ /^(aws|gcloud|az|kubectl|oc|doctl)$/){ skip=0; for(j=i+1;j<=NF;j++){ if($j ~ /^--?(region|profile|output|endpoint|endpoint-url|context|namespace|cluster|n|o|p|r)$/){skip=1;continue} if(skip){skip=0;continue} if($j ~ /^-/){continue} if($j ~ /^[a-z][a-z0-9-]*$/){print $j; exit} } } }')"
   fi
   if [ -z "$tgt" ]; then
     tgt="$(printf '%s' "$c" | grep -oE 'https?://[^/ "'"'"']+' | head -1 | sed -E 's#https?://##')"
@@ -105,7 +123,14 @@ _hook_surface() {
       [ -n "$p" ] && tgt="p$p"
     fi
   fi
-  if [ -n "$tgt" ]; then printf '%s@%s\n' "$fam" "$tgt"; else printf '%s\n' "$fam"; fi
+  # dedup (keep order); fallback to the tool basename so an unmatched action is never a bare "other"
+  L="$(printf '%s\n' $L | awk 'NF && !seen[$0]++' | paste -sd' ' -)"
+  if [ -z "$L" ]; then
+    local tool; tool="$(printf '%s' "$c" | sed -E 's/^[[:space:]]*(sudo([[:space:]]+-[a-z]+)*[[:space:]]+)?//; s/^([a-z_][a-z0-9_]*=[^ ]*[[:space:]]+)+//' | awk '{print $1}')"; tool="${tool##*/}"
+    L="${tool:-other}"
+  fi
+  [ -n "$tgt" ] && L="$L @$tgt"
+  printf '%s\n' "$L"
 }
 
 # rc2_guard_msg <reason> <hypo> <exp> <ceil> <rep> — structured message to the agent (point 7: echoes
@@ -164,16 +189,18 @@ rc2_guard_pre() {
     fi
   fi
 
-  local surf; surf="$(_hook_surface "$(printf '%s' "$input" | jq -r '.tool_input.command // (.tool_name) // ""' 2>/dev/null)")"
+  # multi-label surface: _hook_surface emits a space-separated set, and EVERY label is incremented (so
+  # .surfaces counts per-dimension effort; the totals intentionally exceed the action count).
+  local surfs; surfs="$(_hook_surface "$(printf '%s' "$input" | jq -r '.tool_input.command // (.tool_name) // ""' 2>/dev/null)")"
   rc2_json_update "$ACCT" \
      '.global.experiments=((.global.experiments // 0)+1)
       | .per_hypothesis[$h]=((.per_hypothesis[$h] // {spent:0,repeat_count:0})
           | .spent=((.spent // 0)+1)
           | .repeat_count=(if (.last_action_fp // "")==$fp then ((.repeat_count // 0)+1) else 1 end)
           | .last_action_fp=$fp | .last_utc=(now|todate))
-      | .surfaces[$surf]=((.surfaces[$surf] // 0)+1)
+      | reduce (($surfs // "") | split(" ")[] | select(length>0)) as $s (.; .surfaces[$s]=((.surfaces[$s] // 0)+1))
       | .updated_utc=(now|todate)' \
-     --arg h "$cur" --arg fp "$fp" --arg surf "$surf"
+     --arg h "$cur" --arg fp "$fp" --arg surfs "$surfs"
   return 0
 }
 

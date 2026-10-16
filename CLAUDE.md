@@ -158,7 +158,12 @@ tmux is zero-dependency and lives in the agent's shell env, so everything runs o
   `auditor.sh` (epistemic/conclusiveness auditor → `auditor.md`, auto-started by `hunt` in a
   `<tmux_base>_auditor` tmux session; `NO_AUDITOR=1`);
   `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
-  `failure_analysis.md/.json`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
+  `failure_analysis.md/.json`); `triage.sh` (per-run "thought vs execution" verdict over
+  `failure_analysis.json`, cross-run rollup — the §4 investment signal); `gaps.sh` (read-only §5 digest:
+  per-surface effort + log outcomes[conclusive vs inconclusive] + held assets → the stuck-time
+  enumeration-gap + combination pass the orchestrator runs); `surface_label.sh` (**opt-in** Tier-2
+  inferred-surface labeler, `RC2_SURFACE_TIER2=1`, prompt `SURFACE_LABEL.md` → `logs/surfaces_inferred.json`,
+  folded into `gaps.sh`); `rag.sh` (cross-run memory over past runs); `machine.sh` (HTB
   API util: info/ip/spawn/active/stop/reset/submit by name, name→id auto, 15×3 min spawn wait);
   `burp.sh up|status|down` (optional Burp-over-MCP, opt-in before `./hunt`); `guard.sh` (set the
   guard's *live* level or `show` floor/live/effective — the guard's operator/oversee channel, §4a of
