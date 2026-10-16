@@ -133,7 +133,7 @@ redcat2/
     auditor.sh               epistemic/conclusiveness auditor loop -> auditor.md (auto; pushes via the hook)
     report.sh                writeup.md: narrative (banner+chain+facts) + metrics   (auto on exit)
     analyze_run.sh           failure classifier -> failure_analysis.md/.json  (auto on exit)
-    triage.sh                per-run "thought vs execution" verdict + cross-run rollup (stdout)
+    triage.sh                per-run "thought vs execution" verdict + rollup -> triage/<name>.md (tracked, updated each run)
     gaps.sh                  read-only §5 digest: surface effort + log outcomes + held assets (stdout)
     surface_label.sh         OPT-IN Tier-2 inferred surface labels (RC2_SURFACE_TIER2=1)
     rag.sh                   cross-run memory: grep your own past runs (+ reference/)
@@ -148,6 +148,7 @@ redcat2/
     check_token.sh           validate the token against the live API
   reference/
     surface-signals.md       observation->environment->direction; consulted when ports are thin (not a playbook)
+  triage/                    per-run thought-vs-execution verdicts (triage.sh; tracked, updated each run)
   har/                       drop HTB devtools HARs here        (gitignored)
   runs/<slug>/               per-box workspace, created at run   (gitignored)
 ```
