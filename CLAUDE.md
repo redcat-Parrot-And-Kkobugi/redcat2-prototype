@@ -159,7 +159,7 @@ tmux is zero-dependency and lives in the agent's shell env, so everything runs o
   `<tmux_base>_auditor` tmux session; `NO_AUDITOR=1`);
   `report.sh` + `analyze_run.sh` (retrospectives, auto-run by `hunt` on exit → `writeup.md`,
   `failure_analysis.md/.json`); `triage.sh` (per-run "thought vs execution" verdict over
-  `failure_analysis.json`, cross-run rollup — the §4 investment signal); `gaps.sh` (read-only §5 digest:
+  `failure_analysis.json`, cross-run rollup → `triage/<name>.md` (tracked, updated each run) — the §4 investment signal); `gaps.sh` (read-only §5 digest:
   per-surface effort + log outcomes[conclusive vs inconclusive] + held assets → the stuck-time
   enumeration-gap + combination pass the orchestrator runs); `surface_label.sh` (**opt-in** Tier-2
   inferred-surface labeler, `RC2_SURFACE_TIER2=1`, prompt `SURFACE_LABEL.md` → `logs/surfaces_inferred.json`,
